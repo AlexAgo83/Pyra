@@ -1,0 +1,24 @@
+# Node / Vite
+node_modules/
+dist/
+.parcel-cache/
+.turbo/
+.vite/
+
+# Env / logs
+.env
+.env.*
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor
+.DS_Store
+.idea/
+.vscode/
+
+# API (Nest)
+api/node_modules/
+api/dist/
+api/.env
+api/.env.*
