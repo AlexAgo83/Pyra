@@ -224,7 +224,8 @@ h1 {
   bottom: 12px;
   left: 12px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  width: 200px;
 }
 
 .hud-btn {
@@ -248,6 +249,32 @@ h1 {
 .hud-btn:active {
   transform: translateY(0);
   box-shadow: 0 6px 16px rgba(47, 158, 128, 0.25);
+}
+
+.slider-control {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+}
+
+.slider-control label {
+  font-weight: 700;
+  font-size: 13px;
+  color: #1f2a3d;
+}
+
+.slider-control input[type='range'] {
+  width: 100%;
+  accent-color: #2f9e80;
+}
+
+.slider-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2a3d;
 }
 
 @media (max-width: 900px) {
