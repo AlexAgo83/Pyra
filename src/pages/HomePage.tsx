@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AmbientLight,
   BoxGeometry,
+  BufferGeometry,
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
@@ -12,11 +13,14 @@ import {
   BufferAttribute,
   SphereGeometry,
   Vector3,
+  Vector2,
+  Raycaster,
   WebGLRenderer,
   PCFSoftShadowMap,
   Texture,
   CubeTextureLoader,
   SRGBColorSpace,
+  Material,
 } from 'three';
 import {
   Body,
@@ -35,8 +39,18 @@ const HomePage = () => {
   const fpsRef = useRef<HTMLDivElement | null>(null);
   const orbitRef = useRef(true);
   const freeRef = useRef(false);
-  const physObjectsRef = useRef<Array<{ body: Body; mesh: Mesh; initial: Vector3 }>>([]);
+  type PhysKind = 'box' | 'ball';
+  type PhysEntry = { id: string; body: Body; mesh: Mesh; initial: Vector3; type: PhysKind };
+
+  const physObjectsRef = useRef<PhysEntry[]>([]);
   const resetSceneRef = useRef<() => void>();
+  const selectedRef = useRef<PhysEntry | null>(null);
+  const [selectedInfo, setSelectedInfo] = useState<{
+    id: string;
+    type: string;
+    position: Vector3;
+    velocity: Vector3;
+  } | null>(null);
   const [orbitEnabled, setOrbitEnabled] = useState(true);
   const [freeEnabled, setFreeEnabled] = useState(false);
   const [mountainScale, setMountainScale] = useState(1);
@@ -44,9 +58,18 @@ const HomePage = () => {
   const [cameraHeight, setCameraHeight] = useState(260);
   const [gravityScale, setGravityScale] = useState(1);
   const [bounceScale, setBounceScale] = useState(1);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
+    mountains: true,
+    lakes: true,
+    camHeight: true,
+    gravity: true,
+    bounce: true,
+  });
 
   useEffect(() => {
     physObjectsRef.current = [];
+    selectedRef.current = null;
+    setSelectedInfo(null);
     const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -114,6 +137,9 @@ const HomePage = () => {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = PCFSoftShadowMap;
     const scene = new Scene();
+    const geometries: BufferGeometry[] = [];
+    const materials: Material[] = [];
+    const textures: Texture[] = [];
     const sky = new CubeTextureLoader().setCrossOrigin('anonymous').load(
       [
         'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/px.jpg',
@@ -128,6 +154,7 @@ const HomePage = () => {
         scene.background = sky as Texture;
       }
     );
+    textures.push(sky as Texture);
     const camera = new PerspectiveCamera(60, 1, 0.1, 6000);
     camera.position.set(600, 260, 600);
     camera.lookAt(0, 0, 0);
@@ -152,6 +179,7 @@ const HomePage = () => {
     const groundSize = 6400;
     const groundGeometry = new PlaneGeometry(groundSize, groundSize, 320, 320);
     groundGeometry.rotateX(-Math.PI / 2);
+    geometries.push(groundGeometry);
     const positions = groundGeometry.attributes.position;
     const heightScale = 3.5;
     const heights: number[] = [];
@@ -218,6 +246,7 @@ const HomePage = () => {
       metalness: 0.08,
       vertexColors: true,
     });
+    materials.push(groundMaterial);
     const ground = new Mesh(groundGeometry, groundMaterial);
     ground.receiveShadow = true;
     ground.castShadow = false;
@@ -259,21 +288,46 @@ const HomePage = () => {
     world.addBody(hfBody);
 
     const physObjects = physObjectsRef.current;
+    const focusOn = (_target: Vector3) => {
+      // Selection only; camera stays put.
+    };
 
-    const addBox = (pos: Vector3, size: number, mass = 20) => {
+    const spawnItems: Array<{
+      id: string;
+      type: PhysKind;
+      pos: Vector3;
+      size?: number;
+      radius?: number;
+      mass?: number;
+    }> = [
+      { id: 'box-1', type: 'box', pos: new Vector3(0, 200, 0), size: 50 },
+      { id: 'box-2', type: 'box', pos: new Vector3(-200, 260, 120), size: 70 },
+      { id: 'ball-1', type: 'ball', pos: new Vector3(180, 240, -150), radius: 40 },
+      { id: 'ball-2', type: 'ball', pos: new Vector3(80, 420, 40), radius: 30 },
+      { id: 'ball-3', type: 'ball', pos: new Vector3(-140, 460, -60), radius: 35 },
+      { id: 'ball-4', type: 'ball', pos: new Vector3(220, 500, 120), radius: 28 },
+      { id: 'ball-5', type: 'ball', pos: new Vector3(-60, 540, 180), radius: 26 },
+      { id: 'ball-6', type: 'ball', pos: new Vector3(160, 580, -200), radius: 32 },
+      { id: 'ball-7', type: 'ball', pos: new Vector3(-260, 620, 40), radius: 30 },
+      { id: 'ball-8', type: 'ball', pos: new Vector3(60, 660, 260), radius: 34 },
+    ];
+
+    const addBox = (id: string, pos: Vector3, size: number, mass = 20) => {
       const mesh = new Mesh(new BoxGeometry(size, size, size), new MeshStandardMaterial({ color: 0x444955 }));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
+      geometries.push(mesh.geometry as BufferGeometry);
+      materials.push(mesh.material);
 
       const shape = new CannonBox(new Vec3(size / 2, size / 2, size / 2));
       const body = new Body({ mass, material: boxMat, position: new Vec3(pos.x, pos.y, pos.z) });
       body.addShape(shape);
       world.addBody(body);
-      physObjects.push({ body, mesh, initial: pos.clone() });
+      physObjects.push({ id, body, mesh, initial: pos.clone(), type: 'box' });
     };
 
-    const addSphere = (pos: Vector3, radius: number, mass = 12) => {
+    const addSphere = (id: string, pos: Vector3, radius: number, mass = 12) => {
       const mesh = new Mesh(
         new SphereGeometry(radius, 24, 24),
         new MeshStandardMaterial({ color: ballColorFromHeight(pos.y) })
@@ -281,26 +335,29 @@ const HomePage = () => {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
+      geometries.push(mesh.geometry as BufferGeometry);
+      materials.push(mesh.material);
 
       const shape = new CannonSphere(radius);
       const body = new Body({ mass, material: ballMat, position: new Vec3(pos.x, pos.y, pos.z) });
       body.addShape(shape);
       world.addBody(body);
-      physObjects.push({ body, mesh, initial: pos.clone() });
+      physObjects.push({ id, body, mesh, initial: pos.clone(), type: 'ball' });
     };
 
-    addBox(new Vector3(0, 200, 0), 50);
-    addBox(new Vector3(-200, 260, 120), 70);
-    addSphere(new Vector3(180, 240, -150), 40);
-    addSphere(new Vector3(80, 420, 40), 30);
-    addSphere(new Vector3(-140, 460, -60), 35);
-    addSphere(new Vector3(220, 500, 120), 28);
-    addSphere(new Vector3(-60, 540, 180), 26);
-    addSphere(new Vector3(160, 580, -200), 32);
-    addSphere(new Vector3(-260, 620, 40), 30);
-    addSphere(new Vector3(60, 660, 260), 34);
+    spawnItems.forEach((item) => {
+      if (item.type === 'box' && item.size) {
+        addBox(item.id, item.pos, item.size, item.mass ?? 20);
+      }
+      if (item.type === 'ball' && item.radius) {
+        addSphere(item.id, item.pos, item.radius, item.mass ?? 12);
+      }
+    });
 
     directional.castShadow = true;
+
+    const raycaster = new Raycaster();
+    const pointer = new Vector2();
 
     const resize = () => {
       const { width, height } = container.getBoundingClientRect();
@@ -360,10 +417,35 @@ const HomePage = () => {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('mousemove', onMouseMove);
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const meshes = physObjects.map((p) => p.mesh);
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        const hit = hits[0].object;
+        const found = physObjects.find((p) => p.mesh === hit);
+        if (found) {
+          selectedRef.current = found;
+          setSelectedInfo({
+            id: found.id,
+            type: found.type,
+            position: found.body.position.clone(),
+            velocity: found.body.velocity.clone(),
+          });
+          focusOn(found.body.position.clone());
+        }
+      }
+    };
+    canvas.addEventListener('pointerdown', handlePointerDown);
 
     let animationId = 0;
     let lastTime = performance.now();
     let fpsValue = 0;
+    let lastInfoUpdate = performance.now();
     const defaultCam = new Vector3(600, cameraHeight, 600);
     const manualCamPos = defaultCam.clone();
     const baseOrbitRadius = 800;
@@ -398,7 +480,6 @@ const HomePage = () => {
           Math.sin(pitch),
           Math.cos(yaw) * Math.cos(pitch)
         ).normalize();
-        const right = new Vector3().crossVectors(dir, new Vector3(0, 1, 0)).normalize();
         const moveSpeed = delta * 0.2;
         if (movement.forward) manualCamPos.addScaledVector(dir, moveSpeed);
         if (movement.back) manualCamPos.addScaledVector(dir, -moveSpeed);
@@ -417,6 +498,16 @@ const HomePage = () => {
         mesh.position.set(body.position.x, body.position.y, body.position.z);
         mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
       });
+      if (selectedRef.current && now - lastInfoUpdate > 150) {
+        lastInfoUpdate = now;
+        const sel = selectedRef.current;
+        setSelectedInfo({
+          id: sel.id,
+          type: sel.type,
+          position: sel.body.position.clone(),
+          velocity: sel.body.velocity.clone(),
+        });
+      }
 
       renderer.render(scene, camera);
       animationId = requestAnimationFrame(renderLoop);
@@ -430,6 +521,8 @@ const HomePage = () => {
       setFreeEnabled(false);
       yaw = Math.atan2(defaultCam.x, defaultCam.z);
       pitch = Math.atan2(defaultCam.y, new Vector3(defaultCam.x, 0, defaultCam.z).length());
+      selectedRef.current = null;
+      setSelectedInfo(null);
       physObjects.forEach(({ body, mesh, initial }) => {
         body.position.set(initial.x, initial.y, initial.z);
         body.velocity.set(0, 0, 0);
@@ -450,6 +543,10 @@ const HomePage = () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mousemove', onMouseMove);
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      geometries.forEach((g) => g.dispose());
+      materials.forEach((m) => m.dispose());
+      textures.forEach((t) => t.dispose && t.dispose());
       renderer.dispose();
       resetSceneRef.current = undefined;
     };
@@ -462,72 +559,107 @@ const HomePage = () => {
           <div className="fps-chip" ref={fpsRef}>
             --
           </div>
+          {selectedInfo && (
+            <div className="selection-panel">
+              <h4>Selection</h4>
+              <p className="info-line">ID: {selectedInfo.id}</p>
+              <p className="info-line">Type: {selectedInfo.type}</p>
+              <p className="info-line">
+                Pos: {selectedInfo.position.x.toFixed(1)}, {selectedInfo.position.y.toFixed(1)},{' '}
+                {selectedInfo.position.z.toFixed(1)}
+              </p>
+              <p className="info-line">
+                Vel: {selectedInfo.velocity.x.toFixed(1)}, {selectedInfo.velocity.y.toFixed(1)},{' '}
+                {selectedInfo.velocity.z.toFixed(1)}
+              </p>
+            </div>
+          )}
           <div className="hud-controls">
-            <div className="slider-control">
-              <label htmlFor="mountains">Mountains</label>
-              <input
-                id="mountains"
-                type="range"
-                min="0.5"
-                max="3"
-                step="0.05"
-                value={mountainScale}
-                onChange={(e) => setMountainScale(parseFloat(e.target.value))}
-              />
-              <span className="slider-value">{mountainScale.toFixed(2)}x</span>
-            </div>
-            <div className="slider-control">
-              <label htmlFor="lakes">Ocean depth</label>
-              <input
-                id="lakes"
-                type="range"
-                min="0"
-                max="2"
-                step="0.05"
-                value={lakeScale}
-                onChange={(e) => setLakeScale(parseFloat(e.target.value))}
-              />
-              <span className="slider-value">{lakeScale.toFixed(2)}x</span>
-            </div>
-            <div className="slider-control">
-              <label htmlFor="camHeight">Camera height</label>
-              <input
-                id="camHeight"
-                type="range"
-                min="50"
-                max="500"
-                step="5"
-                value={cameraHeight}
-                onChange={(e) => setCameraHeight(parseFloat(e.target.value))}
-              />
-              <span className="slider-value">{cameraHeight.toFixed(0)}</span>
-            </div>
-            <div className="slider-control">
-              <label htmlFor="gravity">Fall force</label>
-              <input
-                id="gravity"
-                type="range"
-                min="0.5"
-                max="3"
-                step="0.05"
-                value={gravityScale}
-                onChange={(e) => setGravityScale(parseFloat(e.target.value))}
-              />
-              <span className="slider-value">{gravityScale.toFixed(2)}x</span>
-            </div>
-            <div className="slider-control">
-              <label htmlFor="bounce">Bounce strength</label>
-              <input
-                id="bounce"
-                type="range"
-                min="0"
-                max="2"
-                step="0.05"
-                value={bounceScale}
-                onChange={(e) => setBounceScale(parseFloat(e.target.value))}
-              />
-              <span className="slider-value">{bounceScale.toFixed(2)}x</span>
-            </div>
+            {[
+              {
+                key: 'mountains',
+                label: 'Mountains',
+                min: 0.5,
+                max: 3,
+                step: 0.05,
+                value: mountainScale,
+                setter: setMountainScale,
+                format: (v: number) => `${v.toFixed(2)}x`,
+              },
+              {
+                key: 'lakes',
+                label: 'Ocean depth',
+                min: 0,
+                max: 2,
+                step: 0.05,
+                value: lakeScale,
+                setter: setLakeScale,
+                format: (v: number) => `${v.toFixed(2)}x`,
+              },
+              {
+                key: 'camHeight',
+                label: 'Camera height',
+                min: 50,
+                max: 500,
+                step: 5,
+                value: cameraHeight,
+                setter: setCameraHeight,
+                format: (v: number) => `${v.toFixed(0)}`,
+              },
+              {
+                key: 'gravity',
+                label: 'Fall force',
+                min: 0.5,
+                max: 3,
+                step: 0.05,
+                value: gravityScale,
+                setter: setGravityScale,
+                format: (v: number) => `${v.toFixed(2)}x`,
+              },
+              {
+                key: 'bounce',
+                label: 'Bounce strength',
+                min: 0,
+                max: 2,
+                step: 0.05,
+                value: bounceScale,
+                setter: setBounceScale,
+                format: (v: number) => `${v.toFixed(2)}x`,
+              },
+            ].map((slider) => (
+              <div key={slider.key} className={`slider-control ${collapsed[slider.key] ? 'collapsed' : ''}`}>
+                <div className="slider-header">
+                  <label htmlFor={slider.key}>{slider.label}</label>
+                  <button
+                    className="pill-btn"
+                    type="button"
+                    onClick={() =>
+                      setCollapsed((prev) => ({
+                        ...prev,
+                        [slider.key]: !prev[slider.key],
+                      }))
+                    }
+                    aria-label={collapsed[slider.key] ? 'Expand' : 'Collapse'}
+                  >
+                    {collapsed[slider.key] ? '+' : '−'}
+                  </button>
+                </div>
+                {!collapsed[slider.key] && (
+                  <>
+                    <input
+                      id={slider.key}
+                      type="range"
+                      min={slider.min}
+                      max={slider.max}
+                      step={slider.step}
+                      value={slider.value}
+                      onChange={(e) => slider.setter(parseFloat(e.target.value))}
+                    />
+                    <span className="slider-value">{slider.format(slider.value)}</span>
+                  </>
+                )}
+              </div>
+            ))}
             <button
               className="hud-btn"
               type="button"
