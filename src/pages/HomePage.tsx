@@ -58,6 +58,7 @@ const HomePage = () => {
   const pitchRef = useRef(0);
   const orbitHeightRef = useRef(260);
   const [orbitOn, setOrbitOn] = useState(true);
+  const orbitSpeedRef = useRef(1);
   const followRef = useRef<PhysEntry | null>(null);
   const followOffsetRef = useRef<Vector3 | null>(null);
   const [mountainScale, setMountainScale] = useState(1);
@@ -101,6 +102,10 @@ const HomePage = () => {
     cam.position.copy(manualCamRef.current);
     cam.lookAt(target);
   };
+
+  useEffect(() => {
+    orbitSpeedRef.current = orbitSpeed;
+  }, [orbitSpeed]);
 
   useEffect(() => {
     physObjectsRef.current = [];
@@ -524,7 +529,7 @@ const HomePage = () => {
       }
 
       if (orbitRef.current) {
-        const time = now * 0.00018 * orbitSpeed;
+        const time = now * 0.00018 * orbitSpeedRef.current;
         const radius = baseOrbitRadius;
         const camX = Math.cos(time) * radius;
         const camZ = Math.sin(time) * radius;
@@ -633,7 +638,7 @@ const HomePage = () => {
       renderer.dispose();
       resetSceneRef.current = undefined;
     };
-    }, [mountainScale, lakeScale, gravityScale, bounceScale, orbitSpeed]);
+    }, [mountainScale, lakeScale, gravityScale, bounceScale]);
 
   return (
     <div className="canvas-page">
@@ -828,6 +833,9 @@ const HomePage = () => {
                       manualCamRef.current.y = v;
                     }
                     orbitHeightRef.current = v;
+                  }
+                  if (slider.key === 'orbitSpeed') {
+                    orbitSpeedRef.current = v;
                   }
                 }}
               />
