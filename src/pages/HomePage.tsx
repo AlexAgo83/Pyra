@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AmbientLight,
+  BoxGeometry,
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
@@ -9,6 +10,7 @@ import {
   Scene,
   Color,
   BufferAttribute,
+  SphereGeometry,
   Vector3,
   WebGLRenderer,
   PCFSoftShadowMap,
@@ -16,6 +18,16 @@ import {
   CubeTextureLoader,
   SRGBColorSpace,
 } from 'three';
+import {
+  Body,
+  Box as CannonBox,
+  Heightfield,
+  Material as CannonMaterial,
+  ContactMaterial,
+  Sphere as CannonSphere,
+  Vec3,
+  World,
+} from 'cannon-es';
 
 const HomePage = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -23,6 +35,8 @@ const HomePage = () => {
   const fpsRef = useRef<HTMLDivElement | null>(null);
   const orbitRef = useRef(true);
   const freeRef = useRef(false);
+  const physObjectsRef = useRef<Array<{ body: Body; mesh: Mesh; initial: Vector3 }>>([]);
+  const resetSceneRef = useRef<() => void>();
   const [orbitEnabled, setOrbitEnabled] = useState(true);
   const [freeEnabled, setFreeEnabled] = useState(false);
   const [mountainScale, setMountainScale] = useState(1);
@@ -30,6 +44,7 @@ const HomePage = () => {
   const [cameraHeight, setCameraHeight] = useState(260);
 
   useEffect(() => {
+    physObjectsRef.current = [];
     const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -116,26 +131,30 @@ const HomePage = () => {
     directional.shadow.mapSize.set(2048, 2048);
     scene.add(ambient, directional);
 
-    const groundGeometry = new PlaneGeometry(6400, 6400, 320, 320);
+    const groundSize = 6400;
+    const groundGeometry = new PlaneGeometry(groundSize, groundSize, 320, 320);
+    groundGeometry.rotateX(-Math.PI / 2);
     const positions = groundGeometry.attributes.position;
     const heightScale = 3.5;
     const heights: number[] = [];
+    let seaLevel = Number.POSITIVE_INFINITY;
+    let maxHeight = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < positions.count; i++) {
       const x = positions.getX(i);
-      const y = positions.getY(i);
-      const height = terrainHeight(x, y) * heightScale;
+      const z = positions.getZ(i);
+      const height = terrainHeight(x, z) * heightScale;
       heights.push(height);
+      if (height < seaLevel) seaLevel = height;
+      if (height > maxHeight) maxHeight = height;
+      positions.setY(i, height);
     }
 
-    const seaLevel = Math.min(...heights);
-
     let minHeight = Number.POSITIVE_INFINITY;
-    let maxHeight = Number.NEGATIVE_INFINITY;
     const colors: number[] = [];
 
     for (let i = 0; i < positions.count; i++) {
       const adjusted = heights[i] - seaLevel;
-      positions.setZ(i, adjusted);
+      positions.setY(i, adjusted);
       if (adjusted < minHeight) minHeight = adjusted;
       if (adjusted > maxHeight) maxHeight = adjusted;
     }
@@ -146,7 +165,7 @@ const HomePage = () => {
     const sampleHeight = (x: number, z: number) => terrainHeight(x, z) * heightScale - seaLevel;
 
     for (let i = 0; i < positions.count; i++) {
-      const h = positions.getZ(i);
+      const h = positions.getY(i);
       const tRaw = clamp01((h - minHeight) / range);
       const tSmooth = tRaw * tRaw * (3 - 2 * tRaw);
       const bands = 12;
@@ -182,9 +201,69 @@ const HomePage = () => {
       vertexColors: true,
     });
     const ground = new Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
+    ground.castShadow = false;
     scene.add(ground);
+
+    const world = new World({ gravity: new Vec3(0, -9.82, 0) });
+    const groundMat = new CannonMaterial('ground');
+    const dynamicMat = new CannonMaterial('dynamic');
+    world.defaultContactMaterial.friction = 0.6;
+    world.defaultContactMaterial.restitution = 0.05;
+    world.addContactMaterial(new ContactMaterial(groundMat, dynamicMat, { friction: 0.6, restitution: 0.05 }));
+
+    const hfResolution = 64;
+    const elementSize = groundSize / hfResolution;
+    const halfSize = (hfResolution * elementSize) / 2;
+    const matrix: number[][] = [];
+    for (let i = 0; i <= hfResolution; i++) {
+      const row: number[] = [];
+      for (let j = 0; j <= hfResolution; j++) {
+        const x = -halfSize + i * elementSize;
+        const z = halfSize - j * elementSize;
+        row.push(sampleHeight(x, z));
+      }
+      matrix.push(row);
+    }
+
+    const hfShape = new Heightfield(matrix, { elementSize });
+    const hfBody = new Body({ mass: 0, material: groundMat });
+    hfBody.addShape(hfShape);
+    hfBody.position.set(-halfSize, 0, halfSize);
+    hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    world.addBody(hfBody);
+
+    const physObjects = physObjectsRef.current;
+
+    const addBox = (pos: Vector3, size: number, mass = 5) => {
+      const mesh = new Mesh(new BoxGeometry(size, size, size), new MeshStandardMaterial({ color: 0x444955 }));
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+
+      const shape = new CannonBox(new Vec3(size / 2, size / 2, size / 2));
+      const body = new Body({ mass, material: dynamicMat, position: new Vec3(pos.x, pos.y, pos.z) });
+      body.addShape(shape);
+      world.addBody(body);
+      physObjects.push({ body, mesh, initial: pos.clone() });
+    };
+
+    const addSphere = (pos: Vector3, radius: number, mass = 3) => {
+      const mesh = new Mesh(new SphereGeometry(radius, 24, 24), new MeshStandardMaterial({ color: 0x556270 }));
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+
+      const shape = new CannonSphere(radius);
+      const body = new Body({ mass, material: dynamicMat, position: new Vec3(pos.x, pos.y, pos.z) });
+      body.addShape(shape);
+      world.addBody(body);
+      physObjects.push({ body, mesh, initial: pos.clone() });
+    };
+
+    addBox(new Vector3(0, 200, 0), 50);
+    addBox(new Vector3(-200, 260, 120), 70);
+    addSphere(new Vector3(180, 240, -150), 40);
 
     directional.castShadow = true;
 
@@ -297,8 +376,34 @@ const HomePage = () => {
         camera.lookAt(target);
       }
 
+      const fixedTimeStep = 1 / 60;
+      world.step(fixedTimeStep, delta / 1000);
+      physObjects.forEach(({ body, mesh }) => {
+        mesh.position.set(body.position.x, body.position.y, body.position.z);
+        mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+      });
+
       renderer.render(scene, camera);
       animationId = requestAnimationFrame(renderLoop);
+    };
+
+    resetSceneRef.current = () => {
+      orbitRef.current = true;
+      freeRef.current = false;
+      manualCamPos.copy(defaultCam);
+      setOrbitEnabled(true);
+      setFreeEnabled(false);
+      yaw = Math.atan2(defaultCam.x, defaultCam.z);
+      pitch = Math.atan2(defaultCam.y, new Vector3(defaultCam.x, 0, defaultCam.z).length());
+      physObjects.forEach(({ body, mesh, initial }) => {
+        body.position.set(initial.x, initial.y, initial.z);
+        body.velocity.set(0, 0, 0);
+        body.angularVelocity.set(0, 0, 0);
+        body.quaternion.set(0, 0, 0, 1);
+        mesh.position.set(initial.x, initial.y, initial.z);
+        mesh.quaternion.set(0, 0, 0, 1);
+        if (typeof body.wakeUp === 'function') body.wakeUp();
+      });
     };
 
     renderLoop();
@@ -311,6 +416,7 @@ const HomePage = () => {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mousemove', onMouseMove);
       renderer.dispose();
+      resetSceneRef.current = undefined;
     };
     }, [mountainScale, lakeScale, cameraHeight]);
 
@@ -394,13 +500,7 @@ const HomePage = () => {
               className="hud-btn"
               type="button"
               onClick={() => {
-                orbitRef.current = true;
-                freeRef.current = false;
-                manualCamPos.copy(defaultCam);
-                setOrbitEnabled(true);
-                setFreeEnabled(false);
-                yaw = Math.atan2(defaultCam.x, defaultCam.z);
-                pitch = Math.atan2(defaultCam.y, new Vector3(defaultCam.x, 0, defaultCam.z).length());
+                resetSceneRef.current?.();
               }}
             >
               Reset
