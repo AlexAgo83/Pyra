@@ -264,6 +264,13 @@ const HomePage = () => {
     addBox(new Vector3(0, 200, 0), 50);
     addBox(new Vector3(-200, 260, 120), 70);
     addSphere(new Vector3(180, 240, -150), 40);
+    addSphere(new Vector3(80, 420, 40), 30);
+    addSphere(new Vector3(-140, 460, -60), 35);
+    addSphere(new Vector3(220, 500, 120), 28);
+    addSphere(new Vector3(-60, 540, 180), 26);
+    addSphere(new Vector3(160, 580, -200), 32);
+    addSphere(new Vector3(-260, 620, 40), 30);
+    addSphere(new Vector3(60, 660, 260), 34);
 
     directional.castShadow = true;
 
