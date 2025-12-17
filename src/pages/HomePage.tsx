@@ -77,6 +77,30 @@ const HomePage = () => {
   });
   const [showControls, setShowControls] = useState(false);
   const toThree = (v: Vec3) => new Vector3(v.x, v.y, v.z);
+  const focusCameraOn = (sel: PhysEntry | null, opts: { follow?: boolean } = {}) => {
+    const cam = cameraRef.current;
+    if (!sel || !cam) return;
+    const target = toThree(sel.body.position);
+    const offset = manualCamRef.current.clone().sub(target);
+    if (offset.lengthSq() < 1e-3) {
+      offset.set(600, cameraHeightRef.current, 600);
+    }
+    if (opts.follow) {
+      followRef.current = sel;
+      followOffsetRef.current = offset.clone();
+    } else {
+      followRef.current = null;
+      followOffsetRef.current = null;
+    }
+    orbitTargetRef.current.copy(target);
+    manualCamRef.current.copy(target).add(offset);
+    manualCamRef.current.y = cameraHeightRef.current;
+    const dir = target.clone().sub(manualCamRef.current).normalize();
+    yawRef.current = Math.atan2(dir.x, dir.z);
+    pitchRef.current = Math.asin(dir.y);
+    cam.position.copy(manualCamRef.current);
+    cam.lookAt(target);
+  };
 
   useEffect(() => {
     physObjectsRef.current = [];
@@ -327,6 +351,11 @@ const HomePage = () => {
       { id: 'ball-6', type: 'ball', pos: new Vector3(160, 580, -200), radius: 32 },
       { id: 'ball-7', type: 'ball', pos: new Vector3(-260, 620, 40), radius: 30 },
       { id: 'ball-8', type: 'ball', pos: new Vector3(60, 660, 260), radius: 34 },
+      { id: 'ball-9', type: 'ball', pos: new Vector3(-40, 740, 280), radius: 26 },
+      { id: 'ball-10', type: 'ball', pos: new Vector3(140, 820, -220), radius: 30 },
+      { id: 'ball-11', type: 'ball', pos: new Vector3(-220, 880, 140), radius: 28 },
+      { id: 'ball-12', type: 'ball', pos: new Vector3(260, 940, 40), radius: 32 },
+      { id: 'ball-13', type: 'ball', pos: new Vector3(0, 1000, 0), radius: 34 },
     ];
 
     const addBox = (id: string, pos: Vector3, size: number, mass = 20) => {
@@ -568,6 +597,8 @@ const HomePage = () => {
       const resetCam = new Vector3(600, camH, 600);
       manualCamRef.current.copy(resetCam);
       orbitTargetRef.current.set(0, 0, 0);
+      followRef.current = null;
+      followOffsetRef.current = null;
       yawRef.current = Math.atan2(resetCam.x, resetCam.z);
       pitchRef.current = Math.atan2(resetCam.y, new Vector3(resetCam.x, 0, resetCam.z).length());
       setOrbitOn(true);
@@ -628,24 +659,7 @@ const HomePage = () => {
                 className="selection-btn"
                 type="button"
                 onClick={() => {
-                  const sel = selectedRef.current;
-                  const cam = cameraRef.current;
-                  if (!sel || !cam) return;
-                  const target = toThree(sel.body.position);
-                  const offset = manualCamRef.current.clone().sub(target);
-                  if (offset.lengthSq() < 1e-3) {
-                    offset.set(600, cameraHeightRef.current, 600);
-                  }
-                  followRef.current = null;
-                  followOffsetRef.current = null;
-                  orbitTargetRef.current.copy(target);
-                  manualCamRef.current.copy(target).add(offset);
-                  manualCamRef.current.y = cameraHeightRef.current;
-                  const dir = target.clone().sub(manualCamRef.current).normalize();
-                  yawRef.current = Math.atan2(dir.x, dir.z);
-                  pitchRef.current = Math.asin(dir.y);
-                  cam.position.copy(manualCamRef.current);
-                  cam.lookAt(target);
+                  focusCameraOn(selectedRef.current);
                 }}
               >
                 Center
@@ -654,24 +668,7 @@ const HomePage = () => {
                 className="selection-btn"
                 type="button"
                 onClick={() => {
-                  const sel = selectedRef.current;
-                  const cam = cameraRef.current;
-                  if (!sel || !cam) return;
-                  const target = toThree(sel.body.position);
-                  const offset = manualCamRef.current.clone().sub(target);
-                  if (offset.lengthSq() < 1e-3) {
-                    offset.set(600, cameraHeightRef.current, 600);
-                  }
-                  followRef.current = sel;
-                  followOffsetRef.current = offset.clone();
-                  orbitTargetRef.current.copy(target);
-                  manualCamRef.current.copy(target).add(offset);
-                  manualCamRef.current.y = cameraHeightRef.current;
-                  const dir = target.clone().sub(manualCamRef.current).normalize();
-                  yawRef.current = Math.atan2(dir.x, dir.z);
-                  pitchRef.current = Math.asin(dir.y);
-                  cam.position.copy(manualCamRef.current);
-                  cam.lookAt(target);
+                  focusCameraOn(selectedRef.current, { follow: true });
                 }}
               >
                 Follow
@@ -688,6 +685,7 @@ const HomePage = () => {
                       idx <= 0 ? physObjectsRef.current.length - 1 : (idx - 1 + physObjectsRef.current.length) % physObjectsRef.current.length;
                     const nextSel = physObjectsRef.current[prevIdx];
                     if (nextSel) {
+                      const shouldFollow = !!followRef.current;
                       selectedRef.current = nextSel;
                       setSelectedInfo({
                         id: nextSel.id,
@@ -695,6 +693,7 @@ const HomePage = () => {
                         position: toThree(nextSel.body.position),
                         velocity: toThree(nextSel.body.velocity),
                       });
+                      focusCameraOn(nextSel, { follow: shouldFollow });
                     }
                   }}
                   aria-label="Previous object"
@@ -711,6 +710,7 @@ const HomePage = () => {
                     const nextIdx = (idx + 1) % physObjectsRef.current.length;
                     const nextSel = physObjectsRef.current[nextIdx];
                     if (nextSel) {
+                      const shouldFollow = !!followRef.current;
                       selectedRef.current = nextSel;
                       setSelectedInfo({
                         id: nextSel.id,
@@ -718,6 +718,7 @@ const HomePage = () => {
                         position: toThree(nextSel.body.position),
                         velocity: toThree(nextSel.body.velocity),
                       });
+                      focusCameraOn(nextSel, { follow: shouldFollow });
                     }
                   }}
                   aria-label="Next object"
