@@ -42,6 +42,8 @@ const HomePage = () => {
   const [mountainScale, setMountainScale] = useState(1);
   const [lakeScale, setLakeScale] = useState(1);
   const [cameraHeight, setCameraHeight] = useState(260);
+  const [gravityScale, setGravityScale] = useState(1);
+  const [bounceScale, setBounceScale] = useState(1);
 
   useEffect(() => {
     physObjectsRef.current = [];
@@ -82,11 +84,17 @@ const HomePage = () => {
       return value;
     };
 
+    const ballColorFromHeight = (h: number) => {
+      const t = clamp01((h - 150) / 600);
+      const color = new Color().setHSL(0.58 - t * 0.25, 0.35 + t * 0.25, 0.35 + t * 0.25);
+      return color.getHex();
+    };
+
     const terrainHeight = (x: number, y: number) => {
       const broadHills = (fbm(x * 0.015, y * 0.015) - 0.5) * 3.5;
 
       const mBase = fbm(x * 0.07, y * 0.07);
-      const mountains = Math.pow(Math.max(0, mBase - 0.28), 2.35) * 28 * mountainScale;
+      const mountains = Math.pow(Math.max(0, mBase - 0.28), 2.35) * 56 * mountainScale;
 
       const lakeBase = fbm((x + 150) * 0.045, (y - 120) * 0.045);
       const lakes = Math.max(0, 0.6 - lakeBase) * -1 * lakeScale;
@@ -126,10 +134,20 @@ const HomePage = () => {
 
     const ambient = new AmbientLight(0xffffff, 0.55);
     const directional = new DirectionalLight(0xffffff, 1.15);
-    directional.position.set(22, 14, 8);
+    directional.position.set(0, 4200, 0);
+    directional.target.position.set(0, 0, 0);
     directional.castShadow = true;
-    directional.shadow.mapSize.set(2048, 2048);
-    scene.add(ambient, directional);
+    directional.shadow.mapSize.set(4096, 4096);
+    directional.shadow.camera.near = 0.5;
+    directional.shadow.camera.far = 12000;
+    directional.shadow.camera.left = -3300;
+    directional.shadow.camera.right = 3300;
+    directional.shadow.camera.top = 3300;
+    directional.shadow.camera.bottom = -3300;
+    directional.shadow.bias = -0.0003;
+    directional.shadow.normalBias = 0.03;
+    directional.shadow.radius = 4;
+    scene.add(ambient, directional, directional.target);
 
     const groundSize = 6400;
     const groundGeometry = new PlaneGeometry(groundSize, groundSize, 320, 320);
@@ -205,12 +223,19 @@ const HomePage = () => {
     ground.castShadow = false;
     scene.add(ground);
 
-    const world = new World({ gravity: new Vec3(0, -9.82, 0) });
+    const baseGravity = -39.28;
+    const world = new World({ gravity: new Vec3(0, baseGravity * gravityScale, 0) });
     const groundMat = new CannonMaterial('ground');
-    const dynamicMat = new CannonMaterial('dynamic');
+    const boxMat = new CannonMaterial('box');
+    const ballMat = new CannonMaterial('ball');
     world.defaultContactMaterial.friction = 0.6;
-    world.defaultContactMaterial.restitution = 0.05;
-    world.addContactMaterial(new ContactMaterial(groundMat, dynamicMat, { friction: 0.6, restitution: 0.05 }));
+    world.defaultContactMaterial.restitution = 0.2 * bounceScale;
+    world.addContactMaterial(
+      new ContactMaterial(groundMat, boxMat, { friction: 0.55, restitution: 0.3 * bounceScale })
+    );
+    world.addContactMaterial(
+      new ContactMaterial(groundMat, ballMat, { friction: 0.5, restitution: 0.55 * bounceScale })
+    );
 
     const hfResolution = 64;
     const elementSize = groundSize / hfResolution;
@@ -235,27 +260,30 @@ const HomePage = () => {
 
     const physObjects = physObjectsRef.current;
 
-    const addBox = (pos: Vector3, size: number, mass = 5) => {
+    const addBox = (pos: Vector3, size: number, mass = 20) => {
       const mesh = new Mesh(new BoxGeometry(size, size, size), new MeshStandardMaterial({ color: 0x444955 }));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
 
       const shape = new CannonBox(new Vec3(size / 2, size / 2, size / 2));
-      const body = new Body({ mass, material: dynamicMat, position: new Vec3(pos.x, pos.y, pos.z) });
+      const body = new Body({ mass, material: boxMat, position: new Vec3(pos.x, pos.y, pos.z) });
       body.addShape(shape);
       world.addBody(body);
       physObjects.push({ body, mesh, initial: pos.clone() });
     };
 
-    const addSphere = (pos: Vector3, radius: number, mass = 3) => {
-      const mesh = new Mesh(new SphereGeometry(radius, 24, 24), new MeshStandardMaterial({ color: 0x556270 }));
+    const addSphere = (pos: Vector3, radius: number, mass = 12) => {
+      const mesh = new Mesh(
+        new SphereGeometry(radius, 24, 24),
+        new MeshStandardMaterial({ color: ballColorFromHeight(pos.y) })
+      );
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
 
       const shape = new CannonSphere(radius);
-      const body = new Body({ mass, material: dynamicMat, position: new Vec3(pos.x, pos.y, pos.z) });
+      const body = new Body({ mass, material: ballMat, position: new Vec3(pos.x, pos.y, pos.z) });
       body.addShape(shape);
       world.addBody(body);
       physObjects.push({ body, mesh, initial: pos.clone() });
@@ -425,7 +453,7 @@ const HomePage = () => {
       renderer.dispose();
       resetSceneRef.current = undefined;
     };
-    }, [mountainScale, lakeScale, cameraHeight]);
+    }, [mountainScale, lakeScale, cameraHeight, gravityScale, bounceScale]);
 
   return (
     <div className="canvas-page">
@@ -474,34 +502,44 @@ const HomePage = () => {
               />
               <span className="slider-value">{cameraHeight.toFixed(0)}</span>
             </div>
+            <div className="slider-control">
+              <label htmlFor="gravity">Fall force</label>
+              <input
+                id="gravity"
+                type="range"
+                min="0.5"
+                max="3"
+                step="0.05"
+                value={gravityScale}
+                onChange={(e) => setGravityScale(parseFloat(e.target.value))}
+              />
+              <span className="slider-value">{gravityScale.toFixed(2)}x</span>
+            </div>
+            <div className="slider-control">
+              <label htmlFor="bounce">Bounce strength</label>
+              <input
+                id="bounce"
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={bounceScale}
+                onChange={(e) => setBounceScale(parseFloat(e.target.value))}
+              />
+              <span className="slider-value">{bounceScale.toFixed(2)}x</span>
+            </div>
             <button
               className="hud-btn"
               type="button"
               onClick={() => {
-                orbitRef.current = !orbitRef.current;
-                if (orbitRef.current) {
-                  freeRef.current = false;
-                  setFreeEnabled(false);
-                } else {
-                  freeRef.current = true;
-                  setFreeEnabled(true);
-                }
+                const nextOrbit = !orbitRef.current;
+                orbitRef.current = nextOrbit;
+                freeRef.current = !nextOrbit;
                 setOrbitEnabled(orbitRef.current);
-              }}
-            >
-              Orbit: {orbitEnabled ? 'On' : 'Off'}
-            </button>
-            <button
-              className="hud-btn"
-              type="button"
-              onClick={() => {
-                freeRef.current = !freeRef.current;
-                orbitRef.current = !freeRef.current;
                 setFreeEnabled(freeRef.current);
-                setOrbitEnabled(orbitRef.current);
               }}
             >
-              Free: {freeEnabled ? 'On' : 'Off'}
+              Mode: {orbitEnabled ? 'Orbit' : 'Free'}
             </button>
             <button
               className="hud-btn"
