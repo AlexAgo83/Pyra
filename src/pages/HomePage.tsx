@@ -56,8 +56,10 @@ const HomePage = () => {
   const orbitTargetRef = useRef<Vector3>(new Vector3(0, 0, 0));
   const yawRef = useRef(0);
   const pitchRef = useRef(0);
-  const baseOrbitHeightRef = useRef(260);
+  const orbitHeightRef = useRef(260);
   const [orbitOn, setOrbitOn] = useState(true);
+  const followRef = useRef<PhysEntry | null>(null);
+  const followOffsetRef = useRef<Vector3 | null>(null);
   const [mountainScale, setMountainScale] = useState(1);
   const [lakeScale, setLakeScale] = useState(1);
   const [cameraHeight, setCameraHeight] = useState(260);
@@ -74,12 +76,15 @@ const HomePage = () => {
     orbitSpeed: true,
   });
   const [showControls, setShowControls] = useState(false);
+  const toThree = (v: Vec3) => new Vector3(v.x, v.y, v.z);
 
   useEffect(() => {
     physObjectsRef.current = [];
     selectedRef.current = null;
     setSelectedInfo(null);
-    baseOrbitHeightRef.current = cameraHeightRef.current;
+    followRef.current = null;
+    followOffsetRef.current = null;
+    orbitHeightRef.current = cameraHeightRef.current;
     const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -160,8 +165,8 @@ const HomePage = () => {
         'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/nz.jpg',
       ],
       () => {
-        sky.encoding = SRGBColorSpace;
-        scene.background = sky as Texture;
+        sky.colorSpace = SRGBColorSpace;
+        scene.background = sky;
       }
     );
     textures.push(sky as Texture);
@@ -456,10 +461,10 @@ const HomePage = () => {
           setSelectedInfo({
             id: found.id,
             type: found.type,
-            position: found.body.position.clone(),
-            velocity: found.body.velocity.clone(),
+            position: toThree(found.body.position),
+            velocity: toThree(found.body.velocity),
           });
-          focusOn(found.body.position.clone());
+          focusOn(toThree(found.body.position));
         }
       }
     };
@@ -494,10 +499,24 @@ const HomePage = () => {
         const radius = baseOrbitRadius;
         const camX = Math.cos(time) * radius;
         const camZ = Math.sin(time) * radius;
-      const orbitHeight = baseOrbitHeightRef.current;
+      const orbitHeight = orbitHeightRef.current;
       camera.position.set(orbitTargetRef.current.x + camX, orbitHeight, orbitTargetRef.current.z + camZ);
         camera.lookAt(orbitTargetRef.current);
       } else {
+        const isFollowing = !!followRef.current && !!followOffsetRef.current;
+        if (isFollowing && followRef.current && followOffsetRef.current) {
+          const target = toThree(followRef.current.body.position);
+          manualCamRef.current.copy(target).add(followOffsetRef.current);
+          manualCamRef.current.y = cameraHeightRef.current;
+          const toTarget = target.clone().sub(manualCamRef.current).normalize();
+          yawRef.current = Math.atan2(toTarget.x, toTarget.z);
+          pitchRef.current = Math.asin(toTarget.y);
+          movement.forward = false;
+          movement.back = false;
+          movement.strafeLeft = false;
+          movement.strafeRight = false;
+          orbitTargetRef.current.copy(target);
+        }
         const dir = new Vector3(
           Math.sin(yawRef.current) * Math.cos(pitchRef.current),
           Math.sin(pitchRef.current),
@@ -512,7 +531,8 @@ const HomePage = () => {
 
         manualCamRef.current.y = cameraHeightRef.current;
         camera.position.copy(manualCamRef.current);
-        const target = manualCamRef.current.clone().add(dir);
+        const target =
+          isFollowing && followRef.current ? toThree(followRef.current.body.position) : manualCamRef.current.clone().add(dir);
         camera.lookAt(target);
       }
 
@@ -528,9 +548,13 @@ const HomePage = () => {
         setSelectedInfo({
           id: sel.id,
           type: sel.type,
-          position: sel.body.position.clone(),
-          velocity: sel.body.velocity.clone(),
+          position: toThree(sel.body.position),
+          velocity: toThree(sel.body.velocity),
         });
+      }
+      if (orbitRef.current && followRef.current) {
+        const p = followRef.current.body.position;
+        orbitTargetRef.current.set(p.x, p.y, p.z);
       }
 
       renderer.render(scene, camera);
@@ -604,16 +628,103 @@ const HomePage = () => {
                 className="selection-btn"
                 type="button"
                 onClick={() => {
-                  if (selectedRef.current) {
-                    orbitRef.current = true;
-                    freeRef.current = false;
-                    orbitTargetRef.current.copy(selectedRef.current.body.position);
-                    setOrbitOn(true);
+                  const sel = selectedRef.current;
+                  const cam = cameraRef.current;
+                  if (!sel || !cam) return;
+                  const target = toThree(sel.body.position);
+                  const offset = manualCamRef.current.clone().sub(target);
+                  if (offset.lengthSq() < 1e-3) {
+                    offset.set(600, cameraHeightRef.current, 600);
                   }
+                  followRef.current = null;
+                  followOffsetRef.current = null;
+                  orbitTargetRef.current.copy(target);
+                  manualCamRef.current.copy(target).add(offset);
+                  manualCamRef.current.y = cameraHeightRef.current;
+                  const dir = target.clone().sub(manualCamRef.current).normalize();
+                  yawRef.current = Math.atan2(dir.x, dir.z);
+                  pitchRef.current = Math.asin(dir.y);
+                  cam.position.copy(manualCamRef.current);
+                  cam.lookAt(target);
                 }}
               >
                 Center
               </button>
+              <button
+                className="selection-btn"
+                type="button"
+                onClick={() => {
+                  const sel = selectedRef.current;
+                  const cam = cameraRef.current;
+                  if (!sel || !cam) return;
+                  const target = toThree(sel.body.position);
+                  const offset = manualCamRef.current.clone().sub(target);
+                  if (offset.lengthSq() < 1e-3) {
+                    offset.set(600, cameraHeightRef.current, 600);
+                  }
+                  followRef.current = sel;
+                  followOffsetRef.current = offset.clone();
+                  orbitTargetRef.current.copy(target);
+                  manualCamRef.current.copy(target).add(offset);
+                  manualCamRef.current.y = cameraHeightRef.current;
+                  const dir = target.clone().sub(manualCamRef.current).normalize();
+                  yawRef.current = Math.atan2(dir.x, dir.z);
+                  pitchRef.current = Math.asin(dir.y);
+                  cam.position.copy(manualCamRef.current);
+                  cam.lookAt(target);
+                }}
+              >
+                Follow
+              </button>
+              <div className="selection-nav">
+                <button
+                  className="selection-pill"
+                  type="button"
+                  onClick={() => {
+                    const current = selectedRef.current;
+                    if (!current) return;
+                    const idx = physObjectsRef.current.findIndex((p) => p.id === current.id);
+                    const prevIdx =
+                      idx <= 0 ? physObjectsRef.current.length - 1 : (idx - 1 + physObjectsRef.current.length) % physObjectsRef.current.length;
+                    const nextSel = physObjectsRef.current[prevIdx];
+                    if (nextSel) {
+                      selectedRef.current = nextSel;
+                      setSelectedInfo({
+                        id: nextSel.id,
+                        type: nextSel.type,
+                        position: toThree(nextSel.body.position),
+                        velocity: toThree(nextSel.body.velocity),
+                      });
+                    }
+                  }}
+                  aria-label="Previous object"
+                >
+                  ‹
+                </button>
+                <button
+                  className="selection-pill"
+                  type="button"
+                  onClick={() => {
+                    const current = selectedRef.current;
+                    if (!current) return;
+                    const idx = physObjectsRef.current.findIndex((p) => p.id === current.id);
+                    const nextIdx = (idx + 1) % physObjectsRef.current.length;
+                    const nextSel = physObjectsRef.current[nextIdx];
+                    if (nextSel) {
+                      selectedRef.current = nextSel;
+                      setSelectedInfo({
+                        id: nextSel.id,
+                        type: nextSel.type,
+                        position: toThree(nextSel.body.position),
+                        velocity: toThree(nextSel.body.velocity),
+                      });
+                    }
+                  }}
+                  aria-label="Next object"
+                >
+                  ›
+                </button>
+              </div>
             </div>
           )}
           <div className="hud-controls">
@@ -715,7 +826,7 @@ const HomePage = () => {
                     if (!orbitRef.current) {
                       manualCamRef.current.y = v;
                     }
-                    baseOrbitHeightRef.current = v;
+                    orbitHeightRef.current = v;
                   }
                 }}
               />

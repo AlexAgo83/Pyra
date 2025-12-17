@@ -426,7 +426,7 @@ h1 {
 
 .selection-panel .info-line {
   margin: 0;
-  font-size: 12px;
+  font-size: 10.2px;
   color: #1f2a3d;
 }
 
@@ -453,6 +453,40 @@ h1 {
 .selection-btn:active {
   transform: translateY(0);
   box-shadow: 0 6px 12px rgba(47, 158, 128, 0.2);
+}
+
+.selection-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  gap: 6px;
+}
+
+.selection-pill {
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2f9e80, #33b28e);
+  color: #0c2019;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 6px 12px rgba(47, 158, 128, 0.25);
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+}
+
+.selection-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(47, 158, 128, 0.32);
+}
+
+.selection-pill:active {
+  transform: translateY(0);
+  box-shadow: 0 5px 12px rgba(47, 158, 128, 0.2);
 }
 @media (max-width: 900px) {
   body {
