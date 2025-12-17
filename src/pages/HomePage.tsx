@@ -21,6 +21,7 @@ import {
   CubeTextureLoader,
   SRGBColorSpace,
   Material,
+  DoubleSide,
 } from 'three';
 import {
   Body,
@@ -61,6 +62,7 @@ const HomePage = () => {
   const orbitSpeedRef = useRef(1);
   const followRef = useRef<PhysEntry | null>(null);
   const followOffsetRef = useRef<Vector3 | null>(null);
+  const [chunkInfo, setChunkInfo] = useState<{ cx: number; cz: number }>({ cx: 0, cz: 0 });
   const [mountainScale, setMountainScale] = useState(1);
   const [lakeScale, setLakeScale] = useState(1);
   const [cameraHeight, setCameraHeight] = useState(260);
@@ -222,82 +224,6 @@ const HomePage = () => {
     directional.shadow.radius = 4;
     scene.add(ambient, directional, directional.target);
 
-    const groundSize = 6400;
-    const groundGeometry = new PlaneGeometry(groundSize, groundSize, 320, 320);
-    groundGeometry.rotateX(-Math.PI / 2);
-    geometries.push(groundGeometry);
-    const positions = groundGeometry.attributes.position;
-    const heightScale = 3.5;
-    const heights: number[] = [];
-    let seaLevel = Number.POSITIVE_INFINITY;
-    let maxHeight = Number.NEGATIVE_INFINITY;
-    for (let i = 0; i < positions.count; i++) {
-      const x = positions.getX(i);
-      const z = positions.getZ(i);
-      const height = terrainHeight(x, z) * heightScale;
-      heights.push(height);
-      if (height < seaLevel) seaLevel = height;
-      if (height > maxHeight) maxHeight = height;
-      positions.setY(i, height);
-    }
-
-    let minHeight = Number.POSITIVE_INFINITY;
-    const colors: number[] = [];
-
-    for (let i = 0; i < positions.count; i++) {
-      const adjusted = heights[i] - seaLevel;
-      positions.setY(i, adjusted);
-      if (adjusted < minHeight) minHeight = adjusted;
-      if (adjusted > maxHeight) maxHeight = adjusted;
-    }
-    minHeight = 0;
-    groundGeometry.computeVertexNormals();
-    const range = Math.max(0.0001, maxHeight - minHeight);
-
-    const sampleHeight = (x: number, z: number) => terrainHeight(x, z) * heightScale - seaLevel;
-
-    for (let i = 0; i < positions.count; i++) {
-      const h = positions.getY(i);
-      const tRaw = clamp01((h - minHeight) / range);
-      const tSmooth = tRaw * tRaw * (3 - 2 * tRaw);
-      const bands = 12;
-      const tBand = Math.floor(tSmooth * bands) / bands;
-
-      const low = new Color(0x9ccf9f);
-      const mid = new Color(0xd8daca);
-      const high = new Color(0xd44c4c);
-
-      let c = new Color();
-      if (tBand < 0.5) {
-        const tt = tBand * 2;
-        c = low.clone().lerp(mid, tt);
-      } else {
-        const tt = (tBand - 0.5) * 2;
-        c = mid.clone().lerp(high, tt);
-      }
-
-      const contours = 14;
-      const cVal = (tBand * contours) % 1;
-      const contourStrength = cVal < 0.04 ? 0.2 : 0;
-      c = c.multiplyScalar(0.9 - contourStrength);
-
-      colors.push(c.r, c.g, c.b);
-    }
-
-    groundGeometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
-
-    const groundMaterial = new MeshStandardMaterial({
-      color: 0xe6eef5,
-      roughness: 0.8,
-      metalness: 0.08,
-      vertexColors: true,
-    });
-    materials.push(groundMaterial);
-    const ground = new Mesh(groundGeometry, groundMaterial);
-    ground.receiveShadow = true;
-    ground.castShadow = false;
-    scene.add(ground);
-
     const baseGravity = -39.28 * 2;
     const world = new World({ gravity: new Vec3(0, baseGravity * gravityScale, 0) });
     const groundMat = new CannonMaterial('ground');
@@ -312,26 +238,171 @@ const HomePage = () => {
       new ContactMaterial(groundMat, ballMat, { friction: 0.5, restitution: 0.55 * bounceScale })
     );
 
-    const hfResolution = 64;
-    const elementSize = groundSize / hfResolution;
-    const halfSize = (hfResolution * elementSize) / 2;
-    const matrix: number[][] = [];
-    for (let i = 0; i <= hfResolution; i++) {
-      const row: number[] = [];
-      for (let j = 0; j <= hfResolution; j++) {
-        const x = -halfSize + i * elementSize;
-        const z = halfSize - j * elementSize;
-        row.push(sampleHeight(x, z));
+    const heightScale = 3.5;
+    const sampleSeaLevel = () => {
+      let minH = Number.POSITIVE_INFINITY;
+      const span = 3200;
+      const steps = 32;
+      for (let i = 0; i <= steps; i++) {
+        for (let j = 0; j <= steps; j++) {
+          const x = -span / 2 + (i / steps) * span;
+          const z = -span / 2 + (j / steps) * span;
+          const h = terrainHeight(x, z) * heightScale;
+          if (h < minH) minH = h;
+        }
       }
-      matrix.push(row);
-    }
+      return minH;
+    };
 
-    const hfShape = new Heightfield(matrix, { elementSize });
-    const hfBody = new Body({ mass: 0, material: groundMat });
-    hfBody.addShape(hfShape);
-    hfBody.position.set(-halfSize, 0, halfSize);
-    hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    world.addBody(hfBody);
+    const seaLevel = sampleSeaLevel();
+    const sampleHeight = (x: number, z: number) => terrainHeight(x, z) * heightScale - seaLevel;
+
+    type Chunk = {
+      cx: number;
+      cz: number;
+      mesh: Mesh;
+      body: Body;
+    };
+
+    const chunkSize = 800;
+    const chunkResolution = 64;
+    const chunkHalf = chunkSize / 2;
+    const elementSize = chunkSize / chunkResolution;
+    const chunkRadius = 2;
+    const chunkMap = new Map<string, Chunk>();
+    const chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
+    let lastChunkX = Number.NaN;
+    let lastChunkZ = Number.NaN;
+
+    const createChunk = (cx: number, cz: number) => {
+      const key = chunkKey(cx, cz);
+      if (chunkMap.has(key)) return;
+
+      const grid = chunkResolution + 1;
+      const vertexHeights: number[] = [];
+      let localMin = Number.POSITIVE_INFINITY;
+      let localMax = Number.NEGATIVE_INFINITY;
+      const geometry = new PlaneGeometry(chunkSize, chunkSize, chunkResolution, chunkResolution);
+      geometry.rotateX(-Math.PI / 2);
+      const positions = geometry.attributes.position;
+      const matrix: number[][] = [];
+
+      for (let i = 0; i <= chunkResolution; i++) {
+        const row: number[] = [];
+        for (let j = 0; j <= chunkResolution; j++) {
+          const x = -chunkHalf + i * elementSize;
+          const z = -chunkHalf + j * elementSize;
+          const worldX = cx * chunkSize + x;
+          const worldZ = cz * chunkSize + z;
+          const h = sampleHeight(worldX, worldZ);
+          row.push(h);
+          const idx = j * grid + i;
+          positions.setX(idx, x);
+          positions.setZ(idx, z);
+          positions.setY(idx, h);
+          vertexHeights.push(h);
+          if (h < localMin) localMin = h;
+          if (h > localMax) localMax = h;
+        }
+        matrix.push(row);
+      }
+
+      const range = Math.max(0.0001, localMax - localMin);
+      const colors: number[] = [];
+      for (let idx = 0; idx < vertexHeights.length; idx++) {
+        const h = vertexHeights[idx];
+        const tRaw = clamp01((h - localMin) / range);
+        const tSmooth = tRaw * tRaw * (3 - 2 * tRaw);
+        const bands = 12;
+        const tBand = Math.floor(tSmooth * bands) / bands;
+
+        const low = new Color(0x9ccf9f);
+        const mid = new Color(0xd8daca);
+        const high = new Color(0xd44c4c);
+
+        let c = new Color();
+        if (tBand < 0.5) {
+          const tt = tBand * 2;
+          c = low.clone().lerp(mid, tt);
+        } else {
+          const tt = (tBand - 0.5) * 2;
+          c = mid.clone().lerp(high, tt);
+        }
+
+        const contours = 14;
+        const cVal = (tBand * contours) % 1;
+        const contourStrength = cVal < 0.04 ? 0.2 : 0;
+        c = c.multiplyScalar(0.9 - contourStrength);
+
+        colors.push(c.r, c.g, c.b);
+      }
+
+      geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
+      geometry.computeVertexNormals();
+
+      const groundMaterial = new MeshStandardMaterial({
+        color: 0xe6eef5,
+        roughness: 0.8,
+        metalness: 0.08,
+        vertexColors: true,
+        side: DoubleSide,
+      });
+      const mesh = new Mesh(geometry, groundMaterial);
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      mesh.position.set(cx * chunkSize, 0, cz * chunkSize);
+      scene.add(mesh);
+
+      const hfShape = new Heightfield(matrix, { elementSize });
+      const hfBody = new Body({ mass: 0, material: groundMat });
+      hfBody.addShape(hfShape);
+      hfBody.position.set(cx * chunkSize - chunkHalf, 0, cz * chunkSize - chunkHalf);
+      hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+      world.addBody(hfBody);
+
+      chunkMap.set(key, { cx, cz, mesh, body: hfBody });
+    };
+
+    const disposeChunk = (chunk: Chunk) => {
+      scene.remove(chunk.mesh);
+      world.removeBody(chunk.body);
+      (chunk.mesh.geometry as BufferGeometry).dispose();
+      (chunk.mesh.material as Material).dispose();
+    };
+
+    const ensureChunksAround = (cx: number, cz: number) => {
+      for (let i = -chunkRadius; i <= chunkRadius; i++) {
+        for (let j = -chunkRadius; j <= chunkRadius; j++) {
+          createChunk(cx + i, cz + j);
+        }
+      }
+      chunkMap.forEach((chunk, key) => {
+        if (Math.abs(chunk.cx - cx) > chunkRadius + 1 || Math.abs(chunk.cz - cz) > chunkRadius + 1) {
+          disposeChunk(chunk);
+          chunkMap.delete(key);
+        }
+      });
+    };
+
+    const chunkFromPosition = (pos: Vector3) => ({
+      cx: Math.round(pos.x / chunkSize),
+      cz: Math.round(pos.z / chunkSize),
+    });
+
+    const updateChunksForCamera = () => {
+      const cam = cameraRef.current;
+      if (!cam) return;
+      const { cx, cz } = chunkFromPosition(cam.position);
+      if (cx === lastChunkX && cz === lastChunkZ) return;
+      lastChunkX = cx;
+      lastChunkZ = cz;
+      ensureChunksAround(cx, cz);
+      setChunkInfo({ cx, cz });
+    };
+
+    ensureChunksAround(0, 0);
+    lastChunkX = 0;
+    lastChunkZ = 0;
 
     const physObjects = physObjectsRef.current;
     const focusOn = (_target: Vector3) => {
@@ -511,6 +582,11 @@ const HomePage = () => {
     const currentCamHeight = cameraHeightRef.current;
     const defaultCam = new Vector3(600, currentCamHeight, 600);
     manualCamRef.current.copy(defaultCam);
+    const initialChunks = chunkFromPosition(defaultCam);
+    ensureChunksAround(initialChunks.cx, initialChunks.cz);
+    lastChunkX = initialChunks.cx;
+    lastChunkZ = initialChunks.cz;
+    setChunkInfo({ cx: initialChunks.cx, cz: initialChunks.cz });
     const baseOrbitRadius = 800;
     yawRef.current = Math.atan2(defaultCam.x, defaultCam.z);
     pitchRef.current = Math.atan2(defaultCam.y, new Vector3(defaultCam.x, 0, defaultCam.z).length());
@@ -569,6 +645,8 @@ const HomePage = () => {
           isFollowing && followRef.current ? toThree(followRef.current.body.position) : manualCamRef.current.clone().add(dir);
         camera.lookAt(target);
       }
+
+      updateChunksForCamera();
 
       const fixedTimeStep = 1 / 60;
       world.step(fixedTimeStep, delta / 1000);
@@ -635,6 +713,8 @@ const HomePage = () => {
       geometries.forEach((g) => g.dispose());
       materials.forEach((m) => m.dispose());
       textures.forEach((t) => t.dispose && t.dispose());
+      chunkMap.forEach((chunk) => disposeChunk(chunk));
+      chunkMap.clear();
       renderer.dispose();
       resetSceneRef.current = undefined;
     };
@@ -646,6 +726,9 @@ const HomePage = () => {
         <div className="canvas-hud">
           <div className="fps-chip" ref={fpsRef}>
             --
+          </div>
+          <div className="fps-chip chunk-chip">
+            Chunk: {chunkInfo.cx}, {chunkInfo.cz}
           </div>
           {selectedInfo && (
             <div className="selection-panel">
