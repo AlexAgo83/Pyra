@@ -1,0 +1,19 @@
+node_modules
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+.git
+.gitignore
+dist
+.eslintcache
+.vscode
+.idea
+.cache
+
+# API
+api/node_modules
+api/dist
+api/npm-debug.log*
+api/yarn-error.log*
+api/pnpm-debug.log*
