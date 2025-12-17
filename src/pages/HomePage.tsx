@@ -27,6 +27,7 @@ const HomePage = () => {
   const [freeEnabled, setFreeEnabled] = useState(false);
   const [mountainScale, setMountainScale] = useState(1);
   const [lakeScale, setLakeScale] = useState(1);
+  const [cameraHeight, setCameraHeight] = useState(260);
 
   useEffect(() => {
     const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -115,7 +116,7 @@ const HomePage = () => {
     directional.shadow.mapSize.set(2048, 2048);
     scene.add(ambient, directional);
 
-    const groundGeometry = new PlaneGeometry(3200, 3200, 320, 320);
+    const groundGeometry = new PlaneGeometry(6400, 6400, 320, 320);
     const positions = groundGeometry.attributes.position;
     const heightScale = 3.5;
     const heights: number[] = [];
@@ -237,7 +238,7 @@ const HomePage = () => {
       lastMouseX = event.clientX;
       lastMouseY = event.clientY;
       const sensitivity = 0.0025;
-      yaw += dx * sensitivity;
+      yaw -= dx * sensitivity;
       pitch -= dy * sensitivity;
       pitch = Math.max(-1.2, Math.min(1.2, pitch));
     };
@@ -249,10 +250,10 @@ const HomePage = () => {
     let animationId = 0;
     let lastTime = performance.now();
     let fpsValue = 0;
-    const defaultCam = new Vector3(600, 260, 600);
+    const defaultCam = new Vector3(600, cameraHeight, 600);
     const manualCamPos = defaultCam.clone();
     const baseOrbitRadius = 800;
-    const baseOrbitHeight = 260;
+    const baseOrbitHeight = cameraHeight;
     let yaw = Math.atan2(defaultCam.x, defaultCam.z);
     let pitch = Math.atan2(defaultCam.y, new Vector3(defaultCam.x, 0, defaultCam.z).length());
     const movement = { forward: false, back: false, turnLeft: false, turnRight: false };
@@ -290,6 +291,7 @@ const HomePage = () => {
         if (movement.turnLeft) yaw -= 0.002 * delta * 60;
         if (movement.turnRight) yaw += 0.002 * delta * 60;
 
+        manualCamPos.y = cameraHeight;
         camera.position.copy(manualCamPos);
         const target = manualCamPos.clone().add(dir);
         camera.lookAt(target);
@@ -310,7 +312,7 @@ const HomePage = () => {
       window.removeEventListener('mousemove', onMouseMove);
       renderer.dispose();
     };
-  }, [mountainScale, lakeScale]);
+    }, [mountainScale, lakeScale, cameraHeight]);
 
   return (
     <div className="canvas-page">
@@ -345,6 +347,19 @@ const HomePage = () => {
                 onChange={(e) => setLakeScale(parseFloat(e.target.value))}
               />
               <span className="slider-value">{lakeScale.toFixed(2)}x</span>
+            </div>
+            <div className="slider-control">
+              <label htmlFor="camHeight">Camera height</label>
+              <input
+                id="camHeight"
+                type="range"
+                min="50"
+                max="500"
+                step="5"
+                value={cameraHeight}
+                onChange={(e) => setCameraHeight(parseFloat(e.target.value))}
+              />
+              <span className="slider-value">{cameraHeight.toFixed(0)}</span>
             </div>
             <button
               className="hud-btn"
