@@ -187,12 +187,67 @@ h1 {
   border: 1px solid rgba(31, 42, 61, 0.08);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
   overflow: hidden;
+  position: relative;
 }
 
 .canvas-viewport {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.canvas-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 12px;
+}
+
+.fps-chip {
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #f4f6fb;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.hud-controls {
+  position: absolute;
+  pointer-events: auto;
+  bottom: 12px;
+  left: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.hud-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #0c2019;
+  background: linear-gradient(135deg, #2f9e80, #33b28e);
+  box-shadow: 0 8px 18px rgba(47, 158, 128, 0.28);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s;
+}
+
+.hud-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(47, 158, 128, 0.35);
+}
+
+.hud-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 16px rgba(47, 158, 128, 0.25);
 }
 
 @media (max-width: 900px) {
