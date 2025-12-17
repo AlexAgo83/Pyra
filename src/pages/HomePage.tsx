@@ -65,6 +65,7 @@ const HomePage = () => {
     gravity: true,
     bounce: true,
   });
+  const [showControls, setShowControls] = useState(true);
 
   useEffect(() => {
     physObjectsRef.current = [];
@@ -575,93 +576,104 @@ const HomePage = () => {
             </div>
           )}
           <div className="hud-controls">
-            {[
-              {
-                key: 'mountains',
-                label: 'Mountains',
-                min: 0.5,
-                max: 3,
-                step: 0.05,
-                value: mountainScale,
-                setter: setMountainScale,
-                format: (v: number) => `${v.toFixed(2)}x`,
-              },
-              {
-                key: 'lakes',
-                label: 'Ocean depth',
-                min: 0,
-                max: 2,
-                step: 0.05,
-                value: lakeScale,
-                setter: setLakeScale,
-                format: (v: number) => `${v.toFixed(2)}x`,
-              },
-              {
-                key: 'camHeight',
-                label: 'Camera height',
-                min: 50,
-                max: 500,
-                step: 5,
-                value: cameraHeight,
-                setter: setCameraHeight,
-                format: (v: number) => `${v.toFixed(0)}`,
-              },
-              {
-                key: 'gravity',
-                label: 'Fall force',
-                min: 0.5,
-                max: 3,
-                step: 0.05,
-                value: gravityScale,
-                setter: setGravityScale,
-                format: (v: number) => `${v.toFixed(2)}x`,
-              },
-              {
-                key: 'bounce',
-                label: 'Bounce strength',
-                min: 0,
-                max: 2,
-                step: 0.05,
-                value: bounceScale,
-                setter: setBounceScale,
-                format: (v: number) => `${v.toFixed(2)}x`,
-              },
-            ].map((slider) => (
-              <div key={slider.key} className={`slider-control ${collapsed[slider.key] ? 'collapsed' : ''}`}>
-                <div className="slider-header">
-                  <label htmlFor={slider.key}>{slider.label}</label>
-                  <button
-                    className="pill-btn"
-                    type="button"
-                    onClick={() =>
-                      setCollapsed((prev) => ({
-                        ...prev,
-                        [slider.key]: !prev[slider.key],
-                      }))
-                    }
-                    aria-label={collapsed[slider.key] ? 'Expand' : 'Collapse'}
-                  >
-                    {collapsed[slider.key] ? '+' : '−'}
-                  </button>
+            <div className={`slider-stack ${showControls ? 'visible' : 'hidden'}`}>
+              {[
+                {
+                  key: 'mountains',
+                  label: 'Mountains',
+                  min: 0.5,
+                  max: 3,
+                  step: 0.05,
+                  value: mountainScale,
+                  setter: setMountainScale,
+                  format: (v: number) => `${v.toFixed(2)}x`,
+                },
+                {
+                  key: 'lakes',
+                  label: 'Ocean depth',
+                  min: 0,
+                  max: 2,
+                  step: 0.05,
+                  value: lakeScale,
+                  setter: setLakeScale,
+                  format: (v: number) => `${v.toFixed(2)}x`,
+                },
+                {
+                  key: 'camHeight',
+                  label: 'Camera height',
+                  min: 50,
+                  max: 500,
+                  step: 5,
+                  value: cameraHeight,
+                  setter: setCameraHeight,
+                  format: (v: number) => `${v.toFixed(0)}`,
+                },
+                {
+                  key: 'gravity',
+                  label: 'Fall force',
+                  min: 0.5,
+                  max: 3,
+                  step: 0.05,
+                  value: gravityScale,
+                  setter: setGravityScale,
+                  format: (v: number) => `${v.toFixed(2)}x`,
+                },
+                {
+                  key: 'bounce',
+                  label: 'Bounce strength',
+                  min: 0,
+                  max: 2,
+                  step: 0.05,
+                  value: bounceScale,
+                  setter: setBounceScale,
+                  format: (v: number) => `${v.toFixed(2)}x`,
+                },
+              ].map((slider) => (
+                <div key={slider.key} className={`slider-control ${collapsed[slider.key] ? 'collapsed' : ''}`}>
+                  <div className="slider-header">
+                    <label htmlFor={slider.key}>{slider.label}</label>
+                    <button
+                      className="pill-btn"
+                      type="button"
+                      onClick={() =>
+                        setCollapsed((prev) => ({
+                          ...prev,
+                          [slider.key]: !prev[slider.key],
+                        }))
+                      }
+                      aria-label={collapsed[slider.key] ? 'Expand' : 'Collapse'}
+                    >
+                      {collapsed[slider.key] ? '+' : '−'}
+                    </button>
+                  </div>
+                  <div className={`slider-body ${collapsed[slider.key] ? 'is-collapsed' : 'is-open'}`}>
+                    {!collapsed[slider.key] && (
+                      <>
+                        <input
+                          id={slider.key}
+                          type="range"
+                          min={slider.min}
+                          max={slider.max}
+                          step={slider.step}
+                          value={slider.value}
+                          onChange={(e) => slider.setter(parseFloat(e.target.value))}
+                        />
+                        <span className="slider-value">{slider.format(slider.value)}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-                {!collapsed[slider.key] && (
-                  <>
-                    <input
-                      id={slider.key}
-                      type="range"
-                      min={slider.min}
-                      max={slider.max}
-                      step={slider.step}
-                      value={slider.value}
-                      onChange={(e) => slider.setter(parseFloat(e.target.value))}
-                    />
-                    <span className="slider-value">{slider.format(slider.value)}</span>
-                  </>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
             <button
-              className="hud-btn"
+              className={`hud-btn edit-btn ${showControls ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => setShowControls((v) => !v)}
+            >
+              Edit
+            </button>
+            <button
+              className="hud-btn mode-btn"
               type="button"
               onClick={() => {
                 const nextOrbit = !orbitRef.current;
@@ -671,7 +683,8 @@ const HomePage = () => {
                 setFreeEnabled(freeRef.current);
               }}
             >
-              Mode: {orbitEnabled ? 'Orbit' : 'Free'}
+              <span>Mode</span>
+              <span className="mode-chip">{orbitEnabled ? 'Orbit' : 'Free'}</span>
             </button>
             <button
               className="hud-btn"

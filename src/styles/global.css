@@ -276,6 +276,30 @@ h1 {
   box-shadow: 0 6px 16px rgba(47, 158, 128, 0.25);
 }
 
+.edit-btn {
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+
+.edit-btn.is-active {
+  opacity: 0.6;
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.mode-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+  color: #0c2019;
+  font-weight: 800;
+}
+
 .slider-control {
   display: grid;
   gap: 4px;
@@ -340,6 +364,43 @@ h1 {
   font-size: 12px;
   font-weight: 700;
   color: #1f2a3d;
+}
+
+.slider-stack {
+  display: grid;
+  gap: 8px;
+  transition: max-height 0.42s ease, opacity 0.35s ease, transform 0.35s ease;
+  height: auto;
+  max-height: 1200px;
+  opacity: 1;
+  overflow: hidden;
+}
+
+.slider-stack.hidden {
+  max-height: 0;
+  height: 0;
+  opacity: 0;
+  transform: translateY(8px) scaleY(0.98);
+  pointer-events: none;
+  padding: 0;
+  margin: 0;
+  gap: 0;
+}
+
+.slider-body {
+  transition: max-height 0.32s ease, opacity 0.28s ease, transform 0.32s ease;
+  max-height: 120px;
+  opacity: 1;
+  transform: scaleY(1);
+  transform-origin: top;
+  overflow: hidden;
+}
+
+.slider-body.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px) scaleY(0.92);
 }
 
 .selection-panel {
