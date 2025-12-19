@@ -296,6 +296,7 @@ const HomePage = () => {
       const positions = geometry.attributes.position as BufferAttribute;
       const matrix: number[][] = [];
 
+      const curvatureRadius = 40000; // visual-only world curvature
       for (let i = 0; i <= chunkResolution; i++) {
         const row: number[] = [];
         for (let j = 0; j <= chunkResolution; j++) {
@@ -304,12 +305,15 @@ const HomePage = () => {
           const worldX = cx * chunkSize + x;
           const worldZ = cz * chunkSize + z;
           const h = sampleHeight(worldX, worldZ);
-          row.push(h);
+          const d2 = worldX * worldX + worldZ * worldZ;
+          const curvatureOffset = -d2 / curvatureRadius;
+          const curvedH = h + curvatureOffset;
+          row.push(curvedH);
           const idx = j * grid + i;
           positions.setX(idx, x);
           positions.setZ(idx, z);
-          positions.setY(idx, h);
-          vertexHeights.push(h);
+          positions.setY(idx, curvedH);
+          vertexHeights.push(curvedH);
         }
         matrix.push(row);
       }
