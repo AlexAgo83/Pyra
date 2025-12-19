@@ -67,6 +67,7 @@ const HomePage = () => {
   const [chunkInfo, setChunkInfo] = useState<{ cx: number; cz: number }>({ cx: 0, cz: 0 });
   const [mountainScale, setMountainScale] = useState(1);
   const [lakeScale, setLakeScale] = useState(1);
+  const [curvatureStrength, setCurvatureStrength] = useState(1);
   const [cameraHeight, setCameraHeight] = useState(260);
   const cameraHeightRef = useRef(260);
   const [gravityScale, setGravityScale] = useState(1);
@@ -75,6 +76,7 @@ const HomePage = () => {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     mountains: true,
     lakes: true,
+    curvature: true,
     camHeight: true,
     gravity: true,
     bounce: true,
@@ -278,6 +280,7 @@ const HomePage = () => {
     const chunkHalf = chunkSize / 2;
     const elementSize = chunkSize / chunkResolution;
     const chunkRadius = 1;
+    const curvatureRadiusBase = 40000;
     const chunkMap = new Map<string, Chunk>();
     const chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
     let lastChunkX = Number.NaN;
@@ -296,7 +299,7 @@ const HomePage = () => {
       const positions = geometry.attributes.position as BufferAttribute;
       const matrix: number[][] = [];
 
-      const curvatureRadius = 40000; // visual-only world curvature
+      const curvatureRadius = curvatureStrength > 0 ? curvatureRadiusBase / curvatureStrength : Infinity; // visual-only
       for (let i = 0; i <= chunkResolution; i++) {
         const row: number[] = [];
         for (let j = 0; j <= chunkResolution; j++) {
@@ -306,7 +309,7 @@ const HomePage = () => {
           const worldZ = cz * chunkSize + z;
           const h = sampleHeight(worldX, worldZ);
           const d2 = worldX * worldX + worldZ * worldZ;
-          const curvatureOffset = -d2 / curvatureRadius;
+          const curvatureOffset = curvatureRadius === Infinity ? 0 : -d2 / curvatureRadius;
           const curvedH = h + curvatureOffset;
           row.push(curvedH);
           const idx = j * grid + i;
@@ -739,7 +742,7 @@ const HomePage = () => {
       worldRef.current = null;
       contactRefs.current = { defaultContact: null, groundBox: null, groundBall: null };
     };
-    }, [mountainScale, lakeScale]);
+    }, [mountainScale, lakeScale, curvatureStrength]);
 
   useEffect(() => {
     const world = worldRef.current;
@@ -869,16 +872,26 @@ const HomePage = () => {
                   setter: setMountainScale,
                   format: (v: number) => `${v.toFixed(2)}x`,
                 },
-                {
-                  key: 'lakes',
-                  label: 'Ocean depth',
-                  min: 0,
-                  max: 2,
-                  step: 0.05,
-                  value: lakeScale,
-                  setter: setLakeScale,
-                  format: (v: number) => `${v.toFixed(2)}x`,
-                },
+              {
+                key: 'lakes',
+                label: 'Ocean depth',
+                min: 0,
+                max: 2,
+                step: 0.05,
+                value: lakeScale,
+                setter: setLakeScale,
+                format: (v: number) => `${v.toFixed(2)}x`,
+              },
+              {
+                key: 'curvature',
+                label: 'Curvature',
+                min: 0,
+                max: 2,
+                step: 0.05,
+                value: curvatureStrength,
+                setter: setCurvatureStrength,
+                format: (v: number) => (v <= 0.01 ? 'Off' : `${v.toFixed(2)}x`),
+              },
               {
                 key: 'camHeight',
                 label: 'Camera height',
