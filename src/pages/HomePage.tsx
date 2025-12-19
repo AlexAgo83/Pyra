@@ -81,6 +81,8 @@ const HomePage = () => {
     orbitSpeed: true,
   });
   const [showControls, setShowControls] = useState(false);
+  const lastChunkUpdateRef = useRef(0);
+  const lastFpsUpdateRef = useRef(0);
   const worldRef = useRef<World | null>(null);
   const contactRefs = useRef<{
     defaultContact: ContactMaterial | null;
@@ -397,7 +399,8 @@ const HomePage = () => {
       cz: Math.round(pos.z / chunkSize),
     });
 
-    const updateChunksForCamera = () => {
+    const updateChunksForCamera = (ts: number) => {
+      if (ts - lastChunkUpdateRef.current < 200) return;
       const cam = cameraRef.current;
       if (!cam) return;
       const { cx, cz } = chunkFromPosition(cam.position);
@@ -406,6 +409,7 @@ const HomePage = () => {
       lastChunkZ = cz;
       ensureChunksAround(cx, cz);
       setChunkInfo({ cx, cz });
+      lastChunkUpdateRef.current = ts;
     };
 
     ensureChunksAround(0, 0);
@@ -608,8 +612,9 @@ const HomePage = () => {
       lastTime = now;
       const currentFps = delta > 0 ? 1000 / delta : 0;
       fpsValue = fpsValue * 0.9 + currentFps * 0.1;
-      if (fpsRef.current) {
+      if (fpsRef.current && now - lastFpsUpdateRef.current > 150) {
         fpsRef.current.textContent = `${fpsValue.toFixed(0)} fps`;
+        lastFpsUpdateRef.current = now;
       }
 
       if (orbitRef.current) {
@@ -654,7 +659,7 @@ const HomePage = () => {
         camera.lookAt(target);
       }
 
-      updateChunksForCamera();
+      updateChunksForCamera(now);
 
       const fixedTimeStep = 1 / 60;
       const clampedDelta = Math.min(0.1, delta / 1000);
