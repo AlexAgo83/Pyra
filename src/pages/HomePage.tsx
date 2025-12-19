@@ -67,17 +67,17 @@ const HomePage = () => {
   const [chunkInfo, setChunkInfo] = useState<{ cx: number; cz: number }>({ cx: 0, cz: 0 });
   const [mountainScale, setMountainScale] = useState(1);
   const [lakeScale, setLakeScale] = useState(1);
-  const [curvatureStrength, setCurvatureStrength] = useState(1);
   const [cameraHeight, setCameraHeight] = useState(260);
   const cameraHeightRef = useRef(260);
   const [gravityScale, setGravityScale] = useState(1);
   const [bounceScale, setBounceScale] = useState(1);
   const [orbitSpeed, setOrbitSpeed] = useState(1);
+  const [fov, setFov] = useState(60);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     mountains: true,
     lakes: true,
-    curvature: true,
     camHeight: true,
+    fov: true,
     gravity: true,
     bounce: true,
     orbitSpeed: true,
@@ -124,6 +124,13 @@ const HomePage = () => {
   useEffect(() => {
     orbitSpeedRef.current = orbitSpeed;
   }, [orbitSpeed]);
+
+  useEffect(() => {
+    const cam = cameraRef.current;
+    if (!cam) return;
+    cam.fov = fov;
+    cam.updateProjectionMatrix();
+  }, [fov]);
 
   useEffect(() => {
     physObjectsRef.current = [];
@@ -209,7 +216,7 @@ const HomePage = () => {
         scene.background = sky;
       });
     textures.push(sky as Texture);
-    const camera = new PerspectiveCamera(60, 1, 0.1, 6000);
+    const camera = new PerspectiveCamera(fov, 1, 0.1, 6000);
     camera.position.set(600, 260, 600);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
@@ -280,7 +287,6 @@ const HomePage = () => {
     const chunkHalf = chunkSize / 2;
     const elementSize = chunkSize / chunkResolution;
     const chunkRadius = 2;
-    const curvatureRadiusBase = 40000;
     const chunkMap = new Map<string, Chunk>();
     const chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
     let lastChunkX = Number.NaN;
@@ -299,12 +305,6 @@ const HomePage = () => {
       const positions = geometry.attributes.position as BufferAttribute;
       const matrix: number[][] = [];
 
-      const computeCurvatureOffset = (x: number, z: number) => {
-        if (curvatureStrength <= 0.01) return 0;
-        const radius = curvatureRadiusBase / curvatureStrength;
-        return -(x * x + z * z) / radius;
-      };
-      const curvatureRadius = curvatureStrength > 0 ? curvatureRadiusBase / curvatureStrength : Infinity; // visual-only
       for (let i = 0; i <= chunkResolution; i++) {
         const row: number[] = [];
         for (let j = 0; j <= chunkResolution; j++) {
@@ -313,15 +313,12 @@ const HomePage = () => {
           const worldX = cx * chunkSize + x;
           const worldZ = cz * chunkSize + z;
           const h = sampleHeight(worldX, worldZ);
-          const d2 = worldX * worldX + worldZ * worldZ;
-          const curvatureOffset = curvatureRadius === Infinity ? 0 : -d2 / curvatureRadius;
-          const curvedH = h + curvatureOffset;
           row.push(h);
           const idx = j * grid + i;
           positions.setX(idx, x);
           positions.setZ(idx, z);
-          positions.setY(idx, curvedH);
-          vertexHeights.push(curvedH);
+          positions.setY(idx, h);
+          vertexHeights.push(h);
         }
         matrix.push(row);
       }
@@ -329,10 +326,10 @@ const HomePage = () => {
       const normal = new Vector3();
       const sampleNormal = (worldX: number, worldZ: number) => {
         const eps = elementSize;
-        const hL = sampleHeight(worldX - eps, worldZ) + computeCurvatureOffset(worldX - eps, worldZ);
-        const hR = sampleHeight(worldX + eps, worldZ) + computeCurvatureOffset(worldX + eps, worldZ);
-        const hD = sampleHeight(worldX, worldZ - eps) + computeCurvatureOffset(worldX, worldZ - eps);
-        const hU = sampleHeight(worldX, worldZ + eps) + computeCurvatureOffset(worldX, worldZ + eps);
+        const hL = sampleHeight(worldX - eps, worldZ);
+        const hR = sampleHeight(worldX + eps, worldZ);
+        const hD = sampleHeight(worldX, worldZ - eps);
+        const hU = sampleHeight(worldX, worldZ + eps);
         normal.set(hL - hR, 2 * eps, hD - hU).normalize();
         return normal;
       };
@@ -679,11 +676,6 @@ const HomePage = () => {
       world.step(fixedTimeStep, clampedDelta, maxSubSteps);
       physObjects.forEach(({ body, mesh }) => {
         mesh.position.set(body.position.x, body.position.y, body.position.z);
-        if (curvatureStrength > 0.01) {
-          const radius = curvatureRadiusBase / curvatureStrength;
-          const offset = -(mesh.position.x * mesh.position.x + mesh.position.z * mesh.position.z) / radius;
-          mesh.position.y += offset;
-        }
         mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
       });
       if (selectedRef.current && now - lastInfoUpdate > 150) {
@@ -752,7 +744,7 @@ const HomePage = () => {
       worldRef.current = null;
       contactRefs.current = { defaultContact: null, groundBox: null, groundBall: null };
     };
-    }, [mountainScale, lakeScale, curvatureStrength]);
+    }, [mountainScale, lakeScale]);
 
   useEffect(() => {
     const world = worldRef.current;
@@ -893,16 +885,6 @@ const HomePage = () => {
                 format: (v: number) => `${v.toFixed(2)}x`,
               },
               {
-                key: 'curvature',
-                label: 'Curvature',
-                min: 0,
-                max: 2,
-                step: 0.05,
-                value: curvatureStrength,
-                setter: setCurvatureStrength,
-                format: (v: number) => (v <= 0.01 ? 'Off' : `${v.toFixed(2)}x`),
-              },
-              {
                 key: 'camHeight',
                 label: 'Camera height',
                 min: 50,
@@ -911,6 +893,16 @@ const HomePage = () => {
                 value: cameraHeight,
                 setter: setCameraHeight,
                 format: (v: number) => `${v.toFixed(0)}`,
+              },
+              {
+                key: 'fov',
+                label: 'Field of view',
+                min: 30,
+                max: 90,
+                step: 1,
+                value: fov,
+                setter: setFov,
+                format: (v: number) => `${v.toFixed(0)}°`,
               },
               {
                 key: 'orbitSpeed',
