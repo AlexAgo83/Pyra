@@ -274,10 +274,10 @@ const HomePage = () => {
     };
 
     const chunkSize = 800;
-    const chunkResolution = 64;
+    const chunkResolution = 48;
     const chunkHalf = chunkSize / 2;
     const elementSize = chunkSize / chunkResolution;
-    const chunkRadius = 2;
+    const chunkRadius = 1;
     const chunkMap = new Map<string, Chunk>();
     const chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
     let lastChunkX = Number.NaN;
@@ -662,8 +662,8 @@ const HomePage = () => {
       updateChunksForCamera(now);
 
       const fixedTimeStep = 1 / 60;
-      const clampedDelta = Math.min(0.1, delta / 1000);
-      const maxSubSteps = 5;
+      const clampedDelta = Math.min(0.05, delta / 1000);
+      const maxSubSteps = 3;
       world.step(fixedTimeStep, clampedDelta, maxSubSteps);
       physObjects.forEach(({ body, mesh }) => {
         mesh.position.set(body.position.x, body.position.y, body.position.z);
