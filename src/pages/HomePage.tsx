@@ -279,7 +279,7 @@ const HomePage = () => {
     const chunkResolution = 48;
     const chunkHalf = chunkSize / 2;
     const elementSize = chunkSize / chunkResolution;
-    const chunkRadius = 1;
+    const chunkRadius = 2;
     const curvatureRadiusBase = 40000;
     const chunkMap = new Map<string, Chunk>();
     const chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
