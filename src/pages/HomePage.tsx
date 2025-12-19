@@ -299,6 +299,11 @@ const HomePage = () => {
       const positions = geometry.attributes.position as BufferAttribute;
       const matrix: number[][] = [];
 
+      const computeCurvatureOffset = (x: number, z: number) => {
+        if (curvatureStrength <= 0.01) return 0;
+        const radius = curvatureRadiusBase / curvatureStrength;
+        return -(x * x + z * z) / radius;
+      };
       const curvatureRadius = curvatureStrength > 0 ? curvatureRadiusBase / curvatureStrength : Infinity; // visual-only
       for (let i = 0; i <= chunkResolution; i++) {
         const row: number[] = [];
@@ -311,7 +316,7 @@ const HomePage = () => {
           const d2 = worldX * worldX + worldZ * worldZ;
           const curvatureOffset = curvatureRadius === Infinity ? 0 : -d2 / curvatureRadius;
           const curvedH = h + curvatureOffset;
-          row.push(curvedH);
+          row.push(h);
           const idx = j * grid + i;
           positions.setX(idx, x);
           positions.setZ(idx, z);
@@ -324,10 +329,10 @@ const HomePage = () => {
       const normal = new Vector3();
       const sampleNormal = (worldX: number, worldZ: number) => {
         const eps = elementSize;
-        const hL = sampleHeight(worldX - eps, worldZ);
-        const hR = sampleHeight(worldX + eps, worldZ);
-        const hD = sampleHeight(worldX, worldZ - eps);
-        const hU = sampleHeight(worldX, worldZ + eps);
+        const hL = sampleHeight(worldX - eps, worldZ) + computeCurvatureOffset(worldX - eps, worldZ);
+        const hR = sampleHeight(worldX + eps, worldZ) + computeCurvatureOffset(worldX + eps, worldZ);
+        const hD = sampleHeight(worldX, worldZ - eps) + computeCurvatureOffset(worldX, worldZ - eps);
+        const hU = sampleHeight(worldX, worldZ + eps) + computeCurvatureOffset(worldX, worldZ + eps);
         normal.set(hL - hR, 2 * eps, hD - hU).normalize();
         return normal;
       };
@@ -674,6 +679,11 @@ const HomePage = () => {
       world.step(fixedTimeStep, clampedDelta, maxSubSteps);
       physObjects.forEach(({ body, mesh }) => {
         mesh.position.set(body.position.x, body.position.y, body.position.z);
+        if (curvatureStrength > 0.01) {
+          const radius = curvatureRadiusBase / curvatureStrength;
+          const offset = -(mesh.position.x * mesh.position.x + mesh.position.z * mesh.position.z) / radius;
+          mesh.position.y += offset;
+        }
         mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
       });
       if (selectedRef.current && now - lastInfoUpdate > 150) {
