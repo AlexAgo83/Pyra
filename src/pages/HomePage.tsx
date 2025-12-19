@@ -774,7 +774,7 @@ const HomePage = () => {
           <div className="fps-chip" ref={fpsRef}>
             --
           </div>
-          <div className="fps-chip chunk-chip" style={{ marginTop: 8 }}>
+          <div className="fps-chip chunk-chip" style={{ marginLeft: 8 }}>
             Chunk: {chunkInfo.cx}, {chunkInfo.cz}
           </div>
           {selectedInfo && (
