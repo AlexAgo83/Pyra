@@ -73,6 +73,7 @@ const HomePage = () => {
   const [bounceScale, setBounceScale] = useState(1);
   const [orbitSpeed, setOrbitSpeed] = useState(1);
   const [fov, setFov] = useState(60);
+  const curvatureStrength = 0;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     mountains: true,
     lakes: true,
