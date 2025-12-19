@@ -365,7 +365,6 @@ const HomePage = () => {
       const hfBody = new Body({ mass: 0, material: groundMat });
       hfBody.addShape(hfShape);
       hfBody.position.set(cx * chunkSize - chunkHalf, 0, cz * chunkSize - chunkHalf);
-      hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
       world.addBody(hfBody);
 
       chunkMap.set(key, { cx, cz, mesh, body: hfBody });
