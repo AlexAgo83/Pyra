@@ -337,9 +337,10 @@ const HomePage = () => {
 
           const h = vertexHeights[idx];
           const t = clamp01(h / globalHeightRange);
-          const low = new Color(0xb7d8b4);
+          const low = new Color(0x3f78c7); // deeper = bluer
+          const mid = new Color(0x7fc38b);
           const high = new Color(0x1f4a2e);
-          const color = low.clone().lerp(high, t * t);
+          const color = t < 0.5 ? low.clone().lerp(mid, t * 2) : mid.clone().lerp(high, (t - 0.5) * 2);
           colors.push(color.r, color.g, color.b);
         }
       }
