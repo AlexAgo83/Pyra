@@ -34,6 +34,8 @@ import {
   World,
 } from 'cannon-es';
 
+const BASE_GRAVITY = -39.28 * 2;
+
 const HomePage = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -79,6 +81,16 @@ const HomePage = () => {
     orbitSpeed: true,
   });
   const [showControls, setShowControls] = useState(false);
+  const worldRef = useRef<World | null>(null);
+  const contactRefs = useRef<{
+    defaultContact: ContactMaterial | null;
+    groundBox: ContactMaterial | null;
+    groundBall: ContactMaterial | null;
+  }>({
+    defaultContact: null,
+    groundBox: null,
+    groundBall: null,
+  });
   const toThree = (v: Vec3) => new Vector3(v.x, v.y, v.z);
   const focusCameraOn = (sel: PhysEntry | null, opts: { follow?: boolean } = {}) => {
     const cam = cameraRef.current;
@@ -186,20 +198,12 @@ const HomePage = () => {
     const geometries: BufferGeometry[] = [];
     const materials: Material[] = [];
     const textures: Texture[] = [];
-    const sky = new CubeTextureLoader().setCrossOrigin('anonymous').load(
-      [
-        'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/px.jpg',
-        'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/nx.jpg',
-        'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/py.jpg',
-        'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/ny.jpg',
-        'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/pz.jpg',
-        'https://raw.githubusercontent.com/mrdoob/three.js/r165/examples/textures/cube/skyboxsun25deg/nz.jpg',
-      ],
-      () => {
+    const sky = new CubeTextureLoader()
+      .setPath('/textures/skyboxsun25deg/')
+      .load(['px.jpg', 'nx.jpg', 'py.jpg', 'ny.jpg', 'pz.jpg', 'nz.jpg'], () => {
         sky.colorSpace = SRGBColorSpace;
         scene.background = sky;
-      }
-    );
+      });
     textures.push(sky as Texture);
     const camera = new PerspectiveCamera(60, 1, 0.1, 6000);
     camera.position.set(600, 260, 600);
@@ -224,23 +228,24 @@ const HomePage = () => {
     directional.shadow.radius = 4;
     scene.add(ambient, directional, directional.target);
 
-    const baseGravity = -39.28 * 2;
-    const world = new World({ gravity: new Vec3(0, baseGravity * gravityScale, 0) });
+    const world = new World({ gravity: new Vec3(0, BASE_GRAVITY * gravityScale, 0) });
+    worldRef.current = world;
     const groundMat = new CannonMaterial('ground');
     const boxMat = new CannonMaterial('box');
     const ballMat = new CannonMaterial('ball');
-    world.defaultContactMaterial.friction = 0.6;
-    world.defaultContactMaterial.restitution = 0.2 * bounceScale;
-    world.addContactMaterial(
-      new ContactMaterial(groundMat, boxMat, { friction: 0.55, restitution: 0.3 * bounceScale })
-    );
-    world.addContactMaterial(
-      new ContactMaterial(groundMat, ballMat, { friction: 0.5, restitution: 0.55 * bounceScale })
-    );
+    const defaultContact = world.defaultContactMaterial;
+    defaultContact.friction = 0.6;
+    defaultContact.restitution = 0.2 * bounceScale;
+    const groundBox = new ContactMaterial(groundMat, boxMat, { friction: 0.55, restitution: 0.3 * bounceScale });
+    const groundBall = new ContactMaterial(groundMat, ballMat, { friction: 0.5, restitution: 0.55 * bounceScale });
+    world.addContactMaterial(groundBox);
+    world.addContactMaterial(groundBall);
+    contactRefs.current = { defaultContact, groundBox, groundBall };
 
     const heightScale = 3.5;
-    const sampleSeaLevel = () => {
+    const sampleTerrainExtents = () => {
       let minH = Number.POSITIVE_INFINITY;
+      let maxH = Number.NEGATIVE_INFINITY;
       const span = 3200;
       const steps = 32;
       for (let i = 0; i <= steps; i++) {
@@ -249,12 +254,14 @@ const HomePage = () => {
           const z = -span / 2 + (j / steps) * span;
           const h = terrainHeight(x, z) * heightScale;
           if (h < minH) minH = h;
+          if (h > maxH) maxH = h;
         }
       }
-      return minH;
+      return { minH, maxH };
     };
 
-    const seaLevel = sampleSeaLevel();
+    const { minH: seaLevel, maxH: maxTerrain } = sampleTerrainExtents();
+    const globalHeightRange = Math.max(0.0001, maxTerrain - seaLevel);
     const sampleHeight = (x: number, z: number) => terrainHeight(x, z) * heightScale - seaLevel;
 
     type Chunk = {
@@ -280,11 +287,11 @@ const HomePage = () => {
 
       const grid = chunkResolution + 1;
       const vertexHeights: number[] = [];
-      let localMin = Number.POSITIVE_INFINITY;
-      let localMax = Number.NEGATIVE_INFINITY;
+      const normals = new Float32Array((chunkResolution + 1) * (chunkResolution + 1) * 3);
+      const colors: number[] = [];
       const geometry = new PlaneGeometry(chunkSize, chunkSize, chunkResolution, chunkResolution);
       geometry.rotateX(-Math.PI / 2);
-      const positions = geometry.attributes.position;
+      const positions = geometry.attributes.position as BufferAttribute;
       const matrix: number[][] = [];
 
       for (let i = 0; i <= chunkResolution; i++) {
@@ -301,47 +308,47 @@ const HomePage = () => {
           positions.setZ(idx, z);
           positions.setY(idx, h);
           vertexHeights.push(h);
-          if (h < localMin) localMin = h;
-          if (h > localMax) localMax = h;
         }
         matrix.push(row);
       }
 
-      const range = Math.max(0.0001, localMax - localMin);
-      const colors: number[] = [];
-      for (let idx = 0; idx < vertexHeights.length; idx++) {
-        const h = vertexHeights[idx];
-        const tRaw = clamp01((h - localMin) / range);
-        const tSmooth = tRaw * tRaw * (3 - 2 * tRaw);
-        const bands = 12;
-        const tBand = Math.floor(tSmooth * bands) / bands;
+      const normal = new Vector3();
+      const sampleNormal = (worldX: number, worldZ: number) => {
+        const eps = elementSize;
+        const hL = sampleHeight(worldX - eps, worldZ);
+        const hR = sampleHeight(worldX + eps, worldZ);
+        const hD = sampleHeight(worldX, worldZ - eps);
+        const hU = sampleHeight(worldX, worldZ + eps);
+        normal.set(hL - hR, 2 * eps, hD - hU).normalize();
+        return normal;
+      };
 
-        const low = new Color(0x9ccf9f);
-        const mid = new Color(0xd8daca);
-        const high = new Color(0xd44c4c);
+      for (let i = 0; i <= chunkResolution; i++) {
+        for (let j = 0; j <= chunkResolution; j++) {
+          const idx = j * grid + i;
+          const x = positions.getX(idx);
+          const z = positions.getZ(idx);
+          const worldX = cx * chunkSize + x;
+          const worldZ = cz * chunkSize + z;
+          const n = sampleNormal(worldX, worldZ);
+          normals[idx * 3 + 0] = n.x;
+          normals[idx * 3 + 1] = n.y;
+          normals[idx * 3 + 2] = n.z;
 
-        let c = new Color();
-        if (tBand < 0.5) {
-          const tt = tBand * 2;
-          c = low.clone().lerp(mid, tt);
-        } else {
-          const tt = (tBand - 0.5) * 2;
-          c = mid.clone().lerp(high, tt);
+          const h = vertexHeights[idx];
+          const t = clamp01(h / globalHeightRange);
+          const low = new Color(0xb7d8b4);
+          const high = new Color(0x1f4a2e);
+          const color = low.clone().lerp(high, t * t);
+          colors.push(color.r, color.g, color.b);
         }
-
-        const contours = 14;
-        const cVal = (tBand * contours) % 1;
-        const contourStrength = cVal < 0.04 ? 0.2 : 0;
-        c = c.multiplyScalar(0.9 - contourStrength);
-
-        colors.push(c.r, c.g, c.b);
       }
 
+      geometry.setAttribute('normal', new BufferAttribute(normals, 3));
       geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
-      geometry.computeVertexNormals();
 
       const groundMaterial = new MeshStandardMaterial({
-        color: 0xe6eef5,
+        color: 0xffffff,
         roughness: 0.8,
         metalness: 0.08,
         vertexColors: true,
@@ -649,7 +656,9 @@ const HomePage = () => {
       updateChunksForCamera();
 
       const fixedTimeStep = 1 / 60;
-      world.step(fixedTimeStep, delta / 1000);
+      const clampedDelta = Math.min(0.1, delta / 1000);
+      const maxSubSteps = 5;
+      world.step(fixedTimeStep, clampedDelta, maxSubSteps);
       physObjects.forEach(({ body, mesh }) => {
         mesh.position.set(body.position.x, body.position.y, body.position.z);
         mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
@@ -717,8 +726,29 @@ const HomePage = () => {
       chunkMap.clear();
       renderer.dispose();
       resetSceneRef.current = undefined;
+      worldRef.current = null;
+      contactRefs.current = { defaultContact: null, groundBox: null, groundBall: null };
     };
-    }, [mountainScale, lakeScale, gravityScale, bounceScale]);
+    }, [mountainScale, lakeScale]);
+
+  useEffect(() => {
+    const world = worldRef.current;
+    if (!world) return;
+    world.gravity.set(0, BASE_GRAVITY * gravityScale, 0);
+    const { defaultContact, groundBox, groundBall } = contactRefs.current;
+    if (defaultContact) {
+      defaultContact.restitution = 0.2 * bounceScale;
+    }
+    if (groundBox) {
+      groundBox.restitution = 0.3 * bounceScale;
+    }
+    if (groundBall) {
+      groundBall.restitution = 0.55 * bounceScale;
+    }
+    world.bodies.forEach((body) => {
+      if (typeof body.wakeUp === 'function') body.wakeUp();
+    });
+  }, [gravityScale, bounceScale]);
 
   return (
     <div className="canvas-page">
