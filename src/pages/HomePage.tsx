@@ -348,11 +348,12 @@ const HomePage = () => {
           normals[idx * 3 + 2] = n.z;
 
           const h = vertexHeights[idx];
-          const t = clamp01(h / globalHeightRange);
-          const low = new Color(0x3f78c7); // deeper = bluer
-          const mid = new Color(0x7fc38b);
-          const high = new Color(0x1f4a2e);
-          const color = t < 0.5 ? low.clone().lerp(mid, t * 2) : mid.clone().lerp(high, (t - 0.5) * 2);
+          const t = clamp01((h - 0) / globalHeightRange); // h=0 -> green
+          const low = new Color(0x2f6fc0); // negative -> blue
+          const mid = new Color(0x4ca66a); // zero -> green
+          const high = new Color(0xc13f3f); // positive max -> red
+          const color =
+            t < 0.5 ? low.clone().lerp(mid, t * 2) : mid.clone().lerp(high, (t - 0.5) * 2);
           colors.push(color.r, color.g, color.b);
         }
       }
@@ -773,7 +774,7 @@ const HomePage = () => {
           <div className="fps-chip" ref={fpsRef}>
             --
           </div>
-          <div className="fps-chip chunk-chip">
+          <div className="fps-chip chunk-chip" style={{ marginTop: 8 }}>
             Chunk: {chunkInfo.cx}, {chunkInfo.cz}
           </div>
           {selectedInfo && (
