@@ -22,3 +22,5 @@ api/node_modules/
 api/dist/
 api/.env
 api/.env.*
+AGENTS.md
+LOGICS.md
