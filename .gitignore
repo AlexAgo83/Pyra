@@ -24,3 +24,4 @@ api/.env
 api/.env.*
 AGENTS.md
 LOGICS.md
+logics/.cache/
